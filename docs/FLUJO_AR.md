@@ -14,7 +14,7 @@ A la izquierda están los 7 pasos. Puedes seguirlos en orden con **Siguiente →
 | **4. Revisar** | Eliges la campaña (o una pieza) → **Abrir en el navegador**: la ves en el visor desde tu computador, antes de publicar. Con la barra **Luz de la escena** ajustas qué tan clara se ve y la guardas para toda la campaña. |
 | **5. Campañas** | Lo que se detectó en las carpetas: piezas de cada campaña, su peso y su enlace. Aquí cambias el **orden** de las piezas (↑ Subir / ↓ Bajar). |
 | **6. Publicar** | Instrucciones de GitHub Desktop, botón para abrirlo y **Verificar publicación**, que revisa pieza por pieza si ya están en línea. |
-| **7. Generar QR** | Eliges la campaña → **Qué mostrar**: campaña completa o una sola pieza → **Guardar PNG** (impresión) o **Guardar SVG** (PDF, Illustrator). Quedan en la carpeta `qrs\`. |
+| **7. Generar QR** | **Catálogo** con una tarjeta por campaña (su QR abre todas sus piezas). Cada tarjeta tiene **PNG** (impresión) y **SVG** (PDF, Illustrator) y marca **✓** si ya está guardada. **Guardar todos** los guarda de una vez en la carpeta `qrs\`. |
 
 ---
 
@@ -26,7 +26,7 @@ A la izquierda están los 7 pasos. Puedes seguirlos en orden con **Siguiente →
 3. **Paso 4:** Campaña Alpina → Abrir en el navegador → revisas las dos piezas con las flechas.
 4. **Paso 5** (opcional): cambias el orden si quieres que la bandeja salga primero.
 5. **Paso 6:** Abrir GitHub Desktop → **Commit to main** → **Push origin** → espera 1–2 minutos → Verificar publicación → todo en ✓.
-6. **Paso 7:** Campaña Alpina → Campaña completa → Guardar PNG o SVG → escanéalo con Android y con iPhone.
+6. **Paso 7:** en el catálogo, tarjeta **Alpina** → PNG o SVG (o **Guardar todos**) → escanéalo con Android y con iPhone.
 
 > **¿Agregas una pieza a una campaña que ya tiene QR impreso?** No necesitas un QR nuevo: basta con los pasos 3 y 6. El mismo QR ya muestra la pieza nueva.
 

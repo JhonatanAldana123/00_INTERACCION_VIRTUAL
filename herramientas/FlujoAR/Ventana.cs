@@ -737,67 +737,157 @@ namespace FlujoAR
             }
         }
 
-        // ── Paso 7: QR ─────────────────────────────────────────────
+        // ── Paso 7: catálogo de QR ─────────────────────────────────
+        // Cuadrícula con una tarjeta por campaña. Cada tarjeta guarda su PNG o SVG y marca si ya está guardado.
         void PasoQr(FlowLayoutPanel col)
         {
-            col.Controls.Add(Texto("Elige la campaña. Con varias piezas, el QR de la campaña completa deja deslizar entre ellas; también puedes sacar el QR de una sola pieza. El QR funciona cuando ya está publicado (paso 6)."));
+            col.Controls.Add(Texto("Tu catálogo de QR: uno por campaña, que abre todas sus piezas. Funcionan cuando la campaña ya está publicada (paso 6). PNG para impresión; SVG para PDF o Illustrator."));
             if (!CargarCampanas(col)) return;
 
-            var enlace = new LinkLabel { AutoSize = true, MaximumSize = new Size(S(640), 0), Margin = new Padding(0, S(2), 0, S(8)), LinkBehavior = LinkBehavior.HoverUnderline, UseMnemonic = false };            var imagen = new PictureBox { Width = S(200), Height = S(200), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, S(10)) };
-            var btnPng = Boton("Guardar PNG (impresión)", true);
-            var btnSvg = Boton("Guardar SVG (PDF, Illustrator)", false);
+            var btnTodos = Boton("Guardar todos (PNG y SVG)", true);
             var btnCarpeta = Boton("Abrir carpeta de QRs", false);
             var lblEstado = Estado();
-
-            bool[,] matriz = null;
-            string url = null, nombreArchivo = null;
-            ComboBox cmbCampana = null, cmbPieza = null;
-
-            Action generar = () =>
-            {
-                var c = CampanaElegida(cmbCampana);
-                if (c == null) return;
-                var m = PiezaElegida(c, cmbPieza);
-                url = UrlBase + Consulta(c, m);
-                nombreArchivo = "QR_" + c.Clave + (m != null ? "_" + m.Id : "");
-                matriz = Qr.Codificar(url);
-                int ppm = Math.Max(1, (imagen.Width - 4) / (matriz.GetLength(0) + 8));
-                var anterior = imagen.Image;
-                imagen.Image = Qr.ABitmap(matriz, ppm);
-                if (anterior != null) anterior.Dispose();
-                enlace.Text = url;
-                lblEstado.Text = "";
-            };
-
-            AgregarSelectores(col, true, generar, out cmbCampana, out cmbPieza);
-            enlace.LinkClicked += (s, e) => { if (url != null) Abrir(url); };
-            btnPng.Click += (s, e) => GuardarQr(matriz, nombreArchivo + ".png", lblEstado, true);
-            btnSvg.Click += (s, e) => GuardarQr(matriz, nombreArchivo + ".svg", lblEstado, false);
-            btnCarpeta.Click += (s, e) => { Directory.CreateDirectory(carpetaQrs); Abrir(carpetaQrs); };
-
-            col.Controls.Add(enlace);
-            col.Controls.Add(imagen);
-            col.Controls.Add(Fila(btnPng, btnSvg, btnCarpeta));
+            col.Controls.Add(Fila(btnTodos, btnCarpeta));
             col.Controls.Add(lblEstado);
-            generar();
+
+            // Una tarjeta por campaña (el QR abre todas sus piezas)
+            var tarjetas = new List<TarjetaQr>();
+            var grilla = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight, WrapContents = true, AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, MaximumSize = new Size(S(670), 0), Margin = new Padding(0, S(6), 0, 0),
+            };
+            foreach (var c in campanas)
+            {
+                var t = CrearTarjeta(c, null);
+                tarjetas.Add(t);
+                grilla.Controls.Add(t.Panel);
+            }
+            col.Controls.Add(grilla);
+
+            btnCarpeta.Click += (s, e) => { Directory.CreateDirectory(carpetaQrs); Abrir(carpetaQrs); };
+            btnTodos.Click += (s, e) =>
+            {
+                int guardados = 0;
+                string error = null;
+                foreach (var t in tarjetas)
+                {
+                    if (GuardarQr(t.Matriz, t.Archivo + ".png", true, out error) && GuardarQr(t.Matriz, t.Archivo + ".svg", false, out error)) guardados++;
+                    t.Refrescar();
+                }
+                lblEstado.ForeColor = error == null ? Verde : Rojo;
+                lblEstado.Text = error == null
+                    ? "Guardados " + guardados + " códigos QR (PNG y SVG) en la carpeta qrs\\"
+                    : "No se pudieron guardar todos: " + error;
+            };
         }
 
-        void GuardarQr(bool[,] matriz, string archivo, Label estado, bool png)
+        class TarjetaQr
         {
-            if (matriz == null) return;
+            public Panel Panel;
+            public bool[,] Matriz;
+            public string Archivo;
+            public Action Refrescar;
+        }
+
+        TarjetaQr CrearTarjeta(Coleccion c, Modelo m)
+        {
+            var t = new TarjetaQr();
+            string url = UrlBase + Consulta(c, m);
+            t.Archivo = "QR_" + c.Clave + (m != null ? "_" + m.Id : "");
+            t.Matriz = Qr.Codificar(url);
+
+            var borde = Color.FromArgb(222, 225, 231);
+            var tarjeta = new Panel { Width = S(206), Height = S(268), BackColor = Color.FromArgb(247, 248, 250), Margin = new Padding(0, 0, S(12), S(12)) };
+            tarjeta.Paint += (s, e) =>
+            {
+                using (var p = new Pen(borde)) e.Graphics.DrawRectangle(p, 0, 0, tarjeta.Width - 1, tarjeta.Height - 1);
+            };
+            var interior = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown, WrapContents = false, Location = new Point(S(12), S(12)),
+                AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent,
+            };
+
+            int lado = S(156);
+            var imagen = new PictureBox { Width = S(182), Height = lado + S(8), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Color.White, Margin = new Padding(0, 0, 0, S(8)) };
+            imagen.Image = Qr.ABitmap(t.Matriz, Math.Max(1, lado / (t.Matriz.GetLength(0) + 8)));
+
+            var nombre = new Label
+            {
+                Text = m == null ? c.Titulo : m.Nombre, AutoSize = true, UseMnemonic = false, AutoEllipsis = true,
+                MaximumSize = new Size(S(182), S(22)), Font = new Font(Font, FontStyle.Bold), ForeColor = Oscuro, Margin = Padding.Empty,
+            };
+            var detalle = new Label
+            {
+                Text = m == null ? (c.Modelos.Count == 1 ? "1 pieza" : c.Modelos.Count + " piezas · se desliza entre ellas") : "Solo esta pieza",
+                AutoSize = true, UseMnemonic = false, MaximumSize = new Size(S(182), 0), ForeColor = Gris,
+                Font = new Font(Font.FontFamily, 8.5f), Margin = new Padding(0, S(1), 0, S(2)),
+            };
+            var enlace = new LinkLabel
+            {
+                Text = "Abrir enlace", AutoSize = true, LinkBehavior = LinkBehavior.HoverUnderline, UseMnemonic = false,
+                Font = new Font(Font.FontFamily, 8.5f), Margin = new Padding(0, 0, 0, S(6)),
+            };
+            enlace.LinkClicked += (s, e) => Abrir(url);
+
+            var btnPng = BotonChico("PNG", true);
+            var btnSvg = BotonChico("SVG", false);
+            var estado = new Label { AutoSize = true, UseMnemonic = false, Font = new Font(Font.FontFamily, 8.5f), Margin = new Padding(S(6), S(6), 0, 0) };
+
+            t.Refrescar = () =>
+            {
+                bool png = File.Exists(Path.Combine(carpetaQrs, t.Archivo + ".png"));
+                bool svg = File.Exists(Path.Combine(carpetaQrs, t.Archivo + ".svg"));
+                estado.ForeColor = Verde;
+                estado.Text = png && svg ? "✓ PNG y SVG" : png ? "✓ PNG" : svg ? "✓ SVG" : "";
+            };
+            string error;
+            btnPng.Click += (s, e) =>
+            {
+                if (!GuardarQr(t.Matriz, t.Archivo + ".png", true, out error)) { estado.ForeColor = Rojo; estado.Text = "Error"; return; }
+                t.Refrescar();
+            };
+            btnSvg.Click += (s, e) =>
+            {
+                if (!GuardarQr(t.Matriz, t.Archivo + ".svg", false, out error)) { estado.ForeColor = Rojo; estado.Text = "Error"; return; }
+                t.Refrescar();
+            };
+
+            var botones = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = Padding.Empty };
+            botones.Controls.AddRange(new Control[] { btnPng, btnSvg, estado });
+
+            interior.Controls.AddRange(new Control[] { imagen, nombre, detalle, enlace, botones });
+            tarjeta.Controls.Add(interior);
+            t.Panel = tarjeta;
+            t.Refrescar();
+            return t;
+        }
+
+        Button BotonChico(string texto, bool primario)
+        {
+            var b = Boton(texto, primario);
+            b.Font = new Font(Font.FontFamily, 9f, primario ? FontStyle.Bold : FontStyle.Regular);
+            b.Padding = new Padding(S(6), 0, S(6), 0);
+            b.Margin = new Padding(0, 0, S(6), 0);
+            return b;
+        }
+
+        bool GuardarQr(bool[,] matriz, string archivo, bool png, out string error)
+        {
+            error = null;
             try
             {
                 Directory.CreateDirectory(carpetaQrs);
                 string ruta = Path.Combine(carpetaQrs, archivo);
                 if (png) Qr.GuardarPng(matriz, ruta);
                 else Qr.GuardarSvg(matriz, ruta);
-                estado.ForeColor = Verde;
-                estado.Text = "Guardado: qrs\\" + archivo;
+                return true;
             }
             catch (Exception ex)
             {
-                estado.ForeColor = Rojo;
-                estado.Text = "No se pudo guardar: " + ex.Message;
+                error = ex.Message;
+                return false;
             }
         }
 

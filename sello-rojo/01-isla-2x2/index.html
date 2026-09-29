@@ -291,6 +291,7 @@
     id="viewer"
     ar
     ar-modes="scene-viewer webxr quick-look"
+    ar-usdz-max-texture-size="1024"
     camera-controls
     auto-rotate
     auto-rotate-delay="1500"
@@ -390,18 +391,6 @@
     // ── Detección de OS ─────────────────────────────────────
     const isIOS     = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     const isAndroid = /Android/.test(navigator.userAgent);
-
-    // Android: al primer toque, pantalla completa para ocultar la barra de direcciones del navegador.
-    // (iPhone no permite pantalla completa en páginas web; Safari solo muestra el dominio.)
-    if (isAndroid && document.documentElement.requestFullscreen) {
-      const pantallaCompleta = () => {
-        if (document.fullscreenElement) return;
-        document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
-      };
-      document.addEventListener('touchend', pantallaCompleta, { passive: true });
-      document.addEventListener('click', pantallaCompleta);
-    }
-
     // ── Estado ──────────────────────────────────────────────
     let lista = [];          // [{ id, nombre }] — un solo elemento en modo modelo
     let actual = 0;
@@ -417,7 +406,7 @@
     viewer.addEventListener('error', () => {
       const m = lista[actual];
       if (!m) return;
-      const ruta = decodeURI(rutaModelo(m));
+      const ruta = decodeURI(new URL(rutaModelo(m)).pathname).replace(/^\//, '');
       if (lista.length > 1) {
         // En una colección, un modelo faltante no bloquea a los demás
         mostrarInterfaz();
@@ -528,8 +517,12 @@
 
     // Piezas de campaña: la ruta viene en colecciones.json (las carpetas pueden tener tildes y espacios).
     // Formato anterior: models/<id>/<id>.glb
+    // Se devuelve la dirección COMPLETA: model-viewer arma el enlace para el AR de Android (Scene Viewer)
+    // con la dirección de la página e ignora <base>, así que en las páginas limpias (/alpina/) una ruta
+    // relativa apuntaría a /alpina/models/… y el AR fallaría.
     function rutaModelo(m) {
-      return m.archivo ? encodeURI(m.archivo) : `models/${m.id}/${m.id}.glb`;
+      const relativa = m.archivo ? encodeURI(m.archivo) : `models/${m.id}/${m.id}.glb`;
+      return new URL(relativa, document.baseURI).href;
     }
 
     // ── Interfaz ────────────────────────────────────────────
