@@ -10,7 +10,8 @@
   main { max-width: 480px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
   h1 { font-size: 1.3rem; margin: 0 0 16px; }
   label { display: block; font-size: .9rem; margin-bottom: 6px; }
-  input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 8px; background: #fff; }
+  select { margin-bottom: 14px; }
   canvas { display: block; margin: 20px auto; max-width: 100%; }
   .url { font-size: .8rem; word-break: break-all; text-align: center; color: #555; }
   a.url { color: #0969da; }
@@ -20,7 +21,12 @@
 <body>
 <main>
   <h1>Generador de QR para el visor AR</h1>
-  <label for="modelo">Nombre del modelo (sin extensión)</label>
+  <label for="tipo">Tipo de QR</label>
+  <select id="tipo">
+    <option value="modelo">Un modelo</option>
+    <option value="coleccion">Campaña (enlace de la campaña, por ejemplo campana-alpina)</option>
+  </select>
+  <label for="modelo" id="etiqueta">Nombre del modelo (sin extensión)</label>
   <input id="modelo" value="Exh_opc_01">
   <canvas id="qr"></canvas>
   <a id="url" class="url" target="_blank"></a>
@@ -29,12 +35,22 @@
 <script>
   const BASE = 'https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/';
   const input = document.getElementById('modelo');
+  const tipo = document.getElementById('tipo');
+  const etiqueta = document.getElementById('etiqueta');
   const canvas = document.getElementById('qr');
   const link = document.getElementById('url');
 
+  // Al cambiar de tipo se ajusta la etiqueta y el valor de ejemplo
+  tipo.addEventListener('change', () => {
+    const esColeccion = tipo.value === 'coleccion';
+    etiqueta.textContent = esColeccion ? 'Enlace de la campaña (lo muestra Flujo AR en el paso 5)' : 'Nombre del modelo (sin extensión)';
+    input.value = esColeccion ? 'exhibidores' : 'Exh_opc_01';
+    dibujar();
+  });
+
   function dibujar() {
     const modelo = input.value.trim();
-    const url = `${BASE}?modelo=${encodeURIComponent(modelo)}`;
+    const url = `${BASE}?${tipo.value}=${encodeURIComponent(modelo)}`;
     const qr = qrcode(0, 'M');
     qr.addData(url);
     qr.make();
@@ -60,7 +76,8 @@
 
   document.getElementById('descargar').onclick = () => {
     const a = document.createElement('a');
-    a.download = `QR_${input.value.trim() || 'modelo'}.png`;
+    const prefijo = tipo.value === 'coleccion' ? 'QR_coleccion_' : 'QR_';
+    a.download = `${prefijo}${input.value.trim() || 'modelo'}.png`;
     a.href = canvas.toDataURL('image/png');
     a.click();
   };

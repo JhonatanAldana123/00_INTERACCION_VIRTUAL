@@ -1,8 +1,13 @@
 # Configuración local de Claude
 .claude/
 
-# Respaldo de modelos sin optimizar
+# Respaldo de piezas sin optimizar (exportación original de Rhino, dentro de cada carpeta de pieza)
+models/*/*/_original/
+models/*/_original/
 models/_originales/
+
+# QRs generados por Flujo AR (se guardan en tu computador para usarlos en documentos)
+qrs/
 
 # Sistema
 .DS_Store

@@ -1,0 +1,18 @@
+{
+  "alpina": {
+    "titulo": "Alpina",
+    "carpeta": "Alpina",
+    "modelos": [
+      {
+        "id": "01-bandeja-yogo",
+        "nombre": "01_Bandeja_Yogo",
+        "archivo": "models/Alpina/01_Bandeja_Yogo/01_Bandeja_Yogo.glb"
+      },
+      {
+        "id": "01-exhibidor-yogo",
+        "nombre": "01_Exhibidor_Yogo",
+        "archivo": "models/Alpina/01_Exhibidor_Yogo/01_Exhibidor_Yogo.glb"
+      }
+    ]
+  }
+}

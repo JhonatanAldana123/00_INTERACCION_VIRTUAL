@@ -3,90 +3,86 @@
 
 Página web que carga modelos 3D en pantalla completa y activa Realidad Aumentada nativa en iOS (Quick Look) y Android (Scene Viewer) desde un código QR incrustado en PDF.
 
+Sitio publicado: https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/
+
+> **La forma más fácil de trabajar:** doble clic en **`FlujoAR.bat`**. Se abre una ventana que te guía en 7 pasos, desde preparar la pieza en Rhino hasta guardar el QR. Guía: [docs/FLUJO_AR.md](docs/FLUJO_AR.md)
+
 ---
 
 ## Estructura del proyecto
 
 ```
 00_INTERACCION_VIRTUAL/
-├── index.html          ← Visor 3D principal (no modificar)
-├── README.md           ← Este archivo
-└── models/             ← Aquí van TUS modelos
-    ├── silla.glb       ← Para Android (Scene Viewer)
-    ├── silla.usdz      ← Para iOS (Quick Look)
-    ├── mesa.glb
-    └── mesa.usdz
+├── FlujoAR.bat                 ← Ventana paso a paso: de Rhino al QR
+├── index.html                  ← Visor 3D principal
+├── qr.html                     ← Generador de QR en el navegador (alternativa a Flujo AR)
+├── colecciones.json            ← Lista de campañas (se genera sola a partir de models/)
+├── optimizar.bat               ← Arrastra un .glb encima para optimizarlo
+├── herramientas/               ← Código de la ventana Flujo AR
+├── scripts/
+│   ├── optimizar-modelo.ps1    ← Optimizador de piezas
+│   ├── generar-colecciones.js  ← Lee las carpetas y genera colecciones.json
+│   └── analizar-glb.js         ← Reporte de peso, triángulos y texturas
+├── docs/
+│   ├── FLUJO_AR.md             ← Cómo usar la ventana Flujo AR
+│   ├── CAMPANAS.md             ← Campañas: la carpeta manda
+│   └── OPTIMIZAR_MODELOS.md    ← Preparar y optimizar piezas (Rhino, pesos, opciones)
+└── models/                     ← Una carpeta por campaña, una subcarpeta por pieza
+    └── Campaña Alpina/
+        ├── _campana.json       ← Enlace fijo del QR y orden de las piezas
+        ├── Exhibidor01/
+        │   ├── Exhibidor01.glb ← Optimizado: sirve para Android, iPhone y web
+        │   └── _original/      ← Exportación de Rhino sin optimizar (no se sube a GitHub)
+        └── Bandeja01/
+            └── Bandeja01.glb
 ```
 
 ---
 
-## Cómo agregar un nuevo modelo
+## Cómo agregar una pieza
 
-1. Exporta desde Rhino: `modelo.glb` y `modelo.usdc` + texturas
-2. Convierte el `.usdc` a `.usdz` con **Reality Converter** (macOS)
-3. Copia `modelo.glb` y `modelo.usdz` en la carpeta `/models/`
-4. Haz commit y push al repositorio → GitHub Pages publica automáticamente
+Con **Flujo AR** (`FlujoAR.bat`) se hace todo sin terminal. A mano:
 
----
+1. Prepara la pieza en Rhino (malla liviana, materiales simples, escala real) y exporta un `.glb`. Guía: [docs/OPTIMIZAR_MODELOS.md](docs/OPTIMIZAR_MODELOS.md)
+2. Arrastra el `.glb` sobre `optimizar.bat` y escribe la campaña cuando lo pregunte → queda en `models/Campaña/Pieza/` y se actualiza `colecciones.json`
+3. Commit y push con GitHub Desktop → GitHub Pages publica automáticamente
+4. Genera el QR con Flujo AR (paso 7) o con `qr.html`
 
-## URL por modelo
-
-Una vez publicado en GitHub Pages, la URL de cada pieza es:
-
-```
-https://TU-USUARIO.github.io/00_INTERACCION_VIRTUAL/?modelo=NOMBRE
-```
-
-**Ejemplos:**
-```
-?modelo=silla
-?modelo=silla&nombre=Silla%20Auxiliar    ← con etiqueta personalizada
-?modelo=mesa-comedor
-?modelo=lampara-piso
-```
-
-El parámetro `modelo` debe coincidir exactamente con el nombre del archivo sin extensión.
+Solo hace falta el `.glb`: en iPhone, el visor genera el `.usdz` automáticamente a partir de él.
 
 ---
 
-## QR por pieza
+## Enlaces y QR
 
-Genera un QR para cada URL en [qrcode-monkey.com](https://www.qrcode-monkey.com) exportando en **SVG** para incrustar en el PDF sin pérdida de calidad.
+| QR | Enlace |
+|---|---|
+| Campaña completa | `https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/?coleccion=campana-alpina` |
+| Una sola pieza | `…/?coleccion=campana-alpina&pieza=bandeja01` |
 
----
+- Con **1 pieza**, el QR de la campaña muestra esa pieza. Con **varias**, el cliente cambia de pieza con flechas o deslizando la barra inferior.
+- Si agregas piezas a la campaña, **el mismo QR impreso las muestra**. Nunca hay que reimprimirlo.
+- El enlace de cada campaña se guarda en su `_campana.json`: renombrar la carpeta no rompe el QR.
 
-## Publicar en GitHub Pages
-
-1. Crea un repositorio en GitHub con el nombre `00_INTERACCION_VIRTUAL`
-2. Sube todos los archivos (incluyendo la carpeta `/models/`)
-3. Ve a **Settings → Pages → Branch: main → / (root)** → Save
-4. GitHub Pages publica en: `https://TU-USUARIO.github.io/00_INTERACCION_VIRTUAL/`
+**Guía: [docs/CAMPANAS.md](docs/CAMPANAS.md)**
 
 ---
 
 ## Vista previa local
 
-Para probar localmente con los modelos reales, abre una terminal en esta carpeta y ejecuta:
+Desde Flujo AR (paso 4, botón **Abrir en el navegador**), o a mano:
 
 ```bash
-# Python (recomendado — viene instalado en macOS y Windows)
 python -m http.server 8000
-
-# Node.js (si lo tienes instalado)
-npx serve .
 ```
 
-Luego abre `http://localhost:8000/?modelo=NOMBRE` en el navegador.
+Luego abre `http://localhost:8000/?coleccion=ENLACE` en el navegador.
 
-> **Nota:** Abrir `index.html` directamente con doble click **no funciona** para cargar modelos (bloqueo CORS). Usa siempre el servidor local o GitHub Pages.
+> **Nota:** Abrir `index.html` directamente con doble clic **no funciona** para cargar modelos (bloqueo CORS). Usa siempre el servidor local o GitHub Pages.
 
 ---
 
-## Formatos de modelo soportados
+## Formato de las piezas
 
-| Formato | Sistema | Visor nativo |
-|---------|---------|-------------|
-| `.glb`  | Android | Scene Viewer / ARCore |
-| `.usdz` | iOS     | Quick Look AR |
-
-Ambos archivos deben existir con el mismo nombre base para que el QR funcione en ambos sistemas.
+| Archivo | Android | iPhone | Web |
+|---------|---------|--------|-----|
+| `.glb` optimizado (Draco + JPEG) | Scene Viewer | Quick Look (usdz generado automáticamente) | model-viewer |
