@@ -122,6 +122,7 @@ powershell -ExecutionPolicy Bypass -File scripts\optimizar-modelo.ps1 "C:\ruta\E
 |---|---|---|
 | 1 | Crea `models\Campaña\Pieza\` y copia el original a `_original\` | Orden, y poder volver atrás. `_original` no se sube a GitHub. |
 | 2 | Repara el mapeo de objetos copiados, quita líneas y puntos sueltos, borra datos sin usar y une los objetos que comparten material | Las curvas o bordes que se cuelan al exportar hacen que el AR de Android y de iPhone rechace la pieza completa ("no se puede cargar el objeto"). | Rhino a veces exporta el mapeo (UV) solo en uno de varios objetos iguales (por ejemplo, 1 de 21 botellas) y los demás se ven sin etiqueta: si son copias exactas, se les aplica el mismo mapeo. Unir objetos no cambia la forma, pero una pieza con miles de objetos sueltos pesa mucho más y va lenta en el celular (una isla bajó de 15 MB a 4 MB solo con esto). |
+| 2b | Centra la pieza en el origen y apoya su base en el piso | En AR aparece justo donde el cliente toca, sin quedar corrida ni hundida en el suelo. No hace falta ubicarla en el 0,0,0 en Rhino. |
 | 3 | Limita las texturas a 2048 px | En un celular no se nota más resolución |
 | 4 | Convierte las texturas PNG a JPEG | Pesan 5 a 7 veces menos. Se omite si hay transparencia. |
 | 5 | Comprime la geometría con Draco | Reduce la geometría a una fracción. Compatible con el visor web y el AR de Android. |

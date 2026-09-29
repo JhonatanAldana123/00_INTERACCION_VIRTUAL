@@ -438,7 +438,7 @@
         // Cada modelo puede ser "Exh_opc_01" o { "id", "nombre", "archivo" }
         lista = definicion.modelos.map(m => typeof m === 'string'
           ? { id: m, nombre: m }
-          : { id: m.id, nombre: m.nombre || m.id, archivo: m.archivo });
+          : { id: m.id, nombre: m.nombre || m.id, archivo: m.archivo, version: m.version });
         if (definicion.titulo) document.querySelector('.brand').textContent = definicion.titulo;
         // Luz guardada para la campaña en Flujo AR (paso 4)
         if (typeof definicion.exposicion === 'number') viewer.exposure = definicion.exposicion;
@@ -523,7 +523,10 @@
     // relativa apuntaría a /alpina/models/… y el AR fallaría.
     function rutaModelo(m) {
       const relativa = m.archivo ? encodeURI(m.archivo) : `models/${m.id}/${m.id}.glb`;
-      return new URL(relativa, document.baseURI).href;
+      const url = new URL(relativa, document.baseURI);
+      // Versión del contenido: al reoptimizar cambia, y así nadie usa una copia vieja en caché
+      if (m.version) url.searchParams.set('v', m.version);
+      return url.href;
     }
 
     // ── Interfaz ────────────────────────────────────────────

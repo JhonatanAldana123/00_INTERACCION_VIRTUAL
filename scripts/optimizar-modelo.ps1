@@ -118,7 +118,10 @@ Ejecutar @('prune', "$Temp\0.glb", "$Temp\p.glb")
 # inflan el archivo (una ficha por objeto) y obligan al celular a dibujarlos uno por uno
 Ejecutar @('dedup', "$Temp\p.glb", "$Temp\d.glb")
 Ejecutar @('flatten', "$Temp\d.glb", "$Temp\f.glb")
-Ejecutar @('join', "$Temp\f.glb", "$Temp\1.glb")
+Ejecutar @('join', "$Temp\f.glb", "$Temp\j.glb")
+# Centra la pieza en el origen y apoya su base en el piso (y = 0): en AR aparece donde el cliente
+# toca, sin quedar corrida ni hundida en el suelo
+Ejecutar @('center', "$Temp\j.glb", "$Temp\1.glb", '--pivot', 'below')
 
 # ── 3. Tamaño de texturas ──────────────────────────────────
 Paso "3/5 Limitando texturas a $MaxTextura px"

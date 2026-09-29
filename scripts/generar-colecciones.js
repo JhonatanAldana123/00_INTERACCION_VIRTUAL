@@ -81,7 +81,11 @@ for (const carpeta of subcarpetas(carpetaModels)) {
     let id = enlaceDe(p);
     for (let n = 2; idsUsados.has(id); n++) id = `${enlaceDe(p)}-${n}`;
     idsUsados.add(id);
-    return { id, nombre: p, archivo: `models/${carpeta}/${p}/${p}.glb` };
+    // Versión = huella del contenido: cambia al reoptimizar la pieza, y el visor la agrega a la dirección
+    // (?v=…) para que los celulares y la app de AR no usen una copia vieja guardada en caché
+    const version = require('crypto').createHash('sha1')
+      .update(fs.readFileSync(path.join(dirCampana, p, p + '.glb'))).digest('hex').slice(0, 10);
+    return { id, nombre: p, archivo: `models/${carpeta}/${p}/${p}.glb`, version };
   });
 
   campanas.push({ enlace, titulo: carpeta, carpeta, exposicion, modelos });

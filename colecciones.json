@@ -6,12 +6,14 @@
       {
         "id": "01-bandeja-yogo",
         "nombre": "01_Bandeja_Yogo",
-        "archivo": "models/Alpina/01_Bandeja_Yogo/01_Bandeja_Yogo.glb"
+        "archivo": "models/Alpina/01_Bandeja_Yogo/01_Bandeja_Yogo.glb",
+        "version": "6e25e35e74"
       },
       {
         "id": "01-exhibidor-yogo",
         "nombre": "01_Exhibidor_Yogo",
-        "archivo": "models/Alpina/01_Exhibidor_Yogo/01_Exhibidor_Yogo.glb"
+        "archivo": "models/Alpina/01_Exhibidor_Yogo/01_Exhibidor_Yogo.glb",
+        "version": "f3d2116e57"
       }
     ]
   },
@@ -22,17 +24,20 @@
       {
         "id": "01-isla-2x2",
         "nombre": "01_Isla_2X2",
-        "archivo": "models/Sello Rojo/01_Isla_2X2/01_Isla_2X2.glb"
+        "archivo": "models/Sello Rojo/01_Isla_2X2/01_Isla_2X2.glb",
+        "version": "07a2d199a3"
       },
       {
         "id": "02-isla",
         "nombre": "02_Isla",
-        "archivo": "models/Sello Rojo/02_Isla/02_Isla.glb"
+        "archivo": "models/Sello Rojo/02_Isla/02_Isla.glb",
+        "version": "df311e4d6b"
       },
       {
         "id": "exhibidor-01",
         "nombre": "Exhibidor_01",
-        "archivo": "models/Sello Rojo/Exhibidor_01/Exhibidor_01.glb"
+        "archivo": "models/Sello Rojo/Exhibidor_01/Exhibidor_01.glb",
+        "version": "7234d2aec7"
       }
     ]
   }
