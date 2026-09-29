@@ -1,0 +1,16 @@
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos temporales de Rhino
+*.bak
+*.rhl
+*.obj
+*.mtl
+
+# Archivos originales que no van al repo
+*.usda
+*.usdc
+*.blend
+*.3dm

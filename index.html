@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Interacción Virtual AR</title>
+
+  <!-- model-viewer: maneja .glb (Android) y .usdz (iOS) con AR nativo -->
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+  <style>
+    /* ─── TOKENS ─────────────────────────────────────── */
+    :root {
+      --bg:       #08090D;
+      --fg:       #E8EBF4;
+      --fg-dim:   rgba(232,235,244,0.45);
+      --accent:   #00E5C8;
+      --accent-glow: rgba(0,229,200,0.25);
+      --overlay-top: linear-gradient(to bottom, rgba(8,9,13,0.75) 0%, transparent 100%);
+      --overlay-bot: linear-gradient(to top,   rgba(8,9,13,0.85) 0%, transparent 100%);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── VISOR 3D ────────────────────────────────────── */
+    model-viewer {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      --progress-bar-color: var(--accent);
+      --progress-bar-height: 2px;
+    }
+
+    /* Ocultar el botón AR nativo de model-viewer (usamos el nuestro) */
+    model-viewer::part(default-ar-button) { display: none; }
+
+    /* ─── BARRA SUPERIOR ──────────────────────────────── */
+    .topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 20;
+      padding: max(env(safe-area-inset-top, 0px), 16px) 20px 48px;
+      background: var(--overlay-top);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .brand {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+    }
+
+    .model-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg-dim);
+      text-align: right;
+      text-transform: capitalize;
+      letter-spacing: 0.02em;
+    }
+
+    /* ─── CONTROLES INFERIORES ────────────────────────── */
+    .controls {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      padding: 60px 24px max(env(safe-area-inset-bottom, 0px), 28px);
+      background: var(--overlay-bot);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .ar-btn {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--accent);
+      color: #08090D;
+      border: none;
+      border-radius: 100px;
+      padding: 15px 30px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+      box-shadow: 0 0 40px var(--accent-glow);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .ar-btn:active {
+      transform: scale(0.96);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--fg-dim);
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+
+    /* ─── PANTALLA BIENVENIDA (sin ?modelo) ────────────── */
+    .screen {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      text-align: center;
+      padding: 40px 32px;
+      gap: 0;
+    }
+
+    .screen-icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 24px;
+      opacity: 0.6;
+    }
+
+    .screen h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+
+    .screen p {
+      font-size: 14px;
+      color: var(--fg-dim);
+      max-width: 260px;
+      line-height: 1.6;
+    }
+
+    .screen .badge {
+      margin-top: 24px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid rgba(0,229,200,0.3);
+      padding: 5px 12px;
+      border-radius: 100px;
+    }
+
+    /* ─── LOADING ─────────────────────────────────────── */
+    .loading {
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      transition: opacity 0.4s ease;
+    }
+
+    .loading.fade { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 2px solid rgba(255,255,255,0.08);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── UTILIDADES ──────────────────────────────────── */
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- ── VISOR 3D ── -->
+  <model-viewer
+    id="viewer"
+    ar
+    ar-modes="webxr scene-viewer quick-look"
+    camera-controls
+    auto-rotate
+    auto-rotate-delay="1500"
+    rotation-per-second="10deg"
+    shadow-intensity="0.8"
+    shadow-softness="1"
+    environment-image="neutral"
+    exposure="1"
+    touch-action="pan-y"
+    reveal="interaction"
+  ></model-viewer>
+
+  <!-- ── BARRA SUPERIOR ── -->
+  <div class="topbar" id="topbar" hidden>
+    <span class="brand">Interacción Virtual</span>
+    <span class="model-label" id="modelLabel"></span>
+  </div>
+
+  <!-- ── CONTROLES ── -->
+  <div class="controls" id="controls" hidden>
+    <button class="ar-btn" id="arBtn" onclick="activarAR()">
+      <!-- Icono AR -->
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+        <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+        <path d="M12 8l-4 2.5v5L12 18l4-2.5v-5L12 8z"/>
+      </svg>
+      Ver en Realidad Aumentada
+    </button>
+    <span class="hint" id="hintText">Arrastra para rotar · Pellizca para hacer zoom</span>
+  </div>
+
+  <!-- ── PANTALLA DE BIENVENIDA ── -->
+  <div class="screen" id="welcome" hidden>
+    <svg class="screen-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5">
+      <polygon points="32,4 60,20 60,44 32,60 4,44 4,20" stroke-opacity="0.5"/>
+      <polygon points="32,16 48,25 48,43 32,52 16,43 16,25"/>
+      <circle cx="32" cy="34" r="5" fill="currentColor" opacity="0.4"/>
+    </svg>
+    <h1 id="welcomeTitle">Interacción Virtual</h1>
+    <p id="welcomeMsg">Escanea el código QR de la presentación para visualizar el modelo en 3D y Realidad Aumentada.</p>
+    <span class="badge">iOS · Android · Web</span>
+  </div>
+
+  <!-- ── LOADING ── -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+  </div>
+
+
+  <script>
+    // ── Parámetros URL ──────────────────────────────────────
+    // Uso: index.html?modelo=silla&nombre=Silla%20Auxiliar
+    const params = new URLSearchParams(location.search);
+    const modelo = params.get('modelo');
+    const nombre = params.get('nombre') || (modelo ? modelo.replace(/-/g, ' ') : '');
+
+    // ── Elementos ───────────────────────────────────────────
+    const viewer   = document.getElementById('viewer');
+    const loading  = document.getElementById('loading');
+    const welcome  = document.getElementById('welcome');
+    const controls = document.getElementById('controls');
+    const topbar   = document.getElementById('topbar');
+    const hintText = document.getElementById('hintText');
+
+    // ── Detección de OS ─────────────────────────────────────
+    const isIOS     = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isAndroid = /Android/.test(navigator.userAgent);
+    const isMobile  = isIOS || isAndroid;
+
+    // ── Flujo principal ─────────────────────────────────────
+    if (!modelo) {
+      ocultarLoading();
+      welcome.hidden = false;
+    } else {
+      // Etiqueta del modelo
+      document.getElementById('modelLabel').textContent = capitalizar(nombre);
+
+      // Cargar modelo
+      viewer.setAttribute('src', `models/${modelo}.glb`);
+      if (isIOS) {
+        viewer.setAttribute('ios-src', `models/${modelo}.usdz`);
+      }
+
+      // Cuando carga correctamente
+      viewer.addEventListener('load', () => {
+        ocultarLoading();
+        topbar.hidden  = false;
+        controls.hidden = false;
+
+        // Hint contextual por dispositivo
+        if (isIOS)     hintText.textContent = 'Toca "Ver en AR" para proyectar en tu espacio';
+        else if (isAndroid) hintText.textContent = 'Toca "Ver en AR" para proyectar en tu espacio';
+        else           hintText.textContent = 'Arrastra para rotar · Scroll para zoom · Abre desde tu celular para AR';
+      });
+
+      // Si el modelo no existe
+      viewer.addEventListener('error', () => {
+        ocultarLoading();
+        document.getElementById('welcomeTitle').textContent  = 'Modelo no encontrado';
+        document.getElementById('welcomeMsg').textContent    = `No se encontró "${modelo}". Verifica que el archivo esté en /models/${modelo}.glb`;
+        welcome.hidden = false;
+      });
+    }
+
+    // ── Activar AR ──────────────────────────────────────────
+    function activarAR() {
+      try {
+        viewer.activateAR();
+      } catch (e) {
+        // Fallback: simular click en el botón interno de model-viewer
+        const btn = viewer.shadowRoot?.querySelector('[slot="ar-button"], .ar-button');
+        if (btn) btn.click();
+      }
+    }
+
+    // ── Helpers ─────────────────────────────────────────────
+    function ocultarLoading() {
+      loading.classList.add('fade');
+      setTimeout(() => { loading.hidden = true; }, 420);
+    }
+
+    function capitalizar(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+  </script>
+
+</body>
+</html>
