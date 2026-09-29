@@ -50,7 +50,10 @@
 
   function dibujar() {
     const modelo = input.value.trim();
-    const url = `${BASE}?${tipo.value}=${encodeURIComponent(modelo)}`;
+    // Campañas: dirección limpia (…/alpina/), la que crea Flujo AR para cada campaña
+    const url = tipo.value === 'coleccion'
+      ? `${BASE}${encodeURIComponent(modelo)}/`
+      : `${BASE}?${tipo.value}=${encodeURIComponent(modelo)}`;
     const qr = qrcode(0, 'M');
     qr.addData(url);
     qr.make();

@@ -31,8 +31,10 @@ Además, en el paso 7 de Flujo AR puedes sacar el **QR de una sola pieza** de un
 
 | QR | Enlace |
 |---|---|
-| Campaña completa | `…/?coleccion=campana-alpina` |
-| Una pieza | `…/?coleccion=campana-alpina&pieza=bandeja01` |
+| Campaña completa | `…/campana-alpina/` |
+| Una pieza | `…/campana-alpina/bandeja01/` |
+
+Estas **direcciones limpias** son carpetas que Flujo AR crea solo en la raíz del proyecto (una por campaña y, si tiene varias piezas, una por pieza). Hay que subirlas a GitHub junto con lo demás: aparecen en GitHub Desktop como carpetas nuevas. Los enlaces con parámetros (`?coleccion=campana-alpina`) siguen funcionando.
 
 - El enlace de la campaña se crea solo a partir del nombre de la carpeta: sin tildes, sin ñ y con guiones (`Campaña Alpina` → `campana-alpina`).
 - **Se crea una sola vez y queda guardado en `_campana.json`**. Si después renombras la carpeta, el enlace (y el QR impreso) no cambia.

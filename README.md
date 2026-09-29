@@ -56,8 +56,10 @@ Solo hace falta el `.glb`: en iPhone, el visor genera el `.usdz` automáticament
 
 | QR | Enlace |
 |---|---|
-| Campaña completa | `https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/?coleccion=campana-alpina` |
-| Una sola pieza | `…/?coleccion=campana-alpina&pieza=bandeja01` |
+| Campaña completa | `https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/campana-alpina/` |
+| Una sola pieza | `…/campana-alpina/bandeja01/` |
+
+Las carpetas de la raíz con nombre de campaña (`alpina/`…) son esas direcciones limpias: las crea Flujo AR, no las edites a mano. La dirección base del sitio está en `sitio.json`.
 
 - Con **1 pieza**, el QR de la campaña muestra esa pieza. Con **varias**, el cliente cambia de pieza con flechas o deslizando la barra inferior.
 - Si agregas piezas a la campaña, **el mismo QR impreso las muestra**. Nunca hay que reimprimirlo.

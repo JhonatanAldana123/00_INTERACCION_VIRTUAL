@@ -21,7 +21,8 @@ namespace FlujoAR
     // Cada carpeta raíz es una campaña. Con varias piezas, su QR es una colección; con una, muestra esa pieza.
     class Ventana : Form
     {
-        const string UrlBase = "https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/";
+        // Dirección del sitio publicado: se lee de sitio.json (un solo lugar para cambiarla)
+        readonly string UrlBase = "https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/";
         static readonly Regex Ansi = new Regex(@"\x1B\[[0-9;]*[A-Za-z]");
 
         static readonly Color Oscuro = Color.FromArgb(16, 19, 26);
@@ -49,7 +50,7 @@ namespace FlujoAR
         int paso;
 
         // Estado que se conserva al cambiar de paso
-        readonly bool[] checklist = new bool[7];
+        readonly bool[] checklist = new bool[8];
         string archivoEntrada = "", campanaEntrada = "", nombrePieza = "";
         string ultimaCampana, ultimaPieza;          // carpeta y nombre de la última pieza optimizada
         bool optimizando;
@@ -68,6 +69,14 @@ namespace FlujoAR
             carpetaModelos = Path.Combine(raiz, "models");
             rutaColecciones = Path.Combine(raiz, "colecciones.json");
             carpetaQrs = Path.Combine(raiz, "qrs");
+            try
+            {
+                var sitio = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path.Combine(raiz, "sitio.json"), Encoding.UTF8)) as Dictionary<string, object>;
+                object url;
+                if (sitio != null && sitio.TryGetValue("url", out url) && url is string && ((string)url).StartsWith("http"))
+                    UrlBase = ((string)url).TrimEnd('/') + "/";
+            }
+            catch { /* sin sitio.json se usa la dirección por defecto */ }
 
             // TLS 1.2 para verificar la publicación en GitHub Pages
             ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
@@ -177,6 +186,7 @@ namespace FlujoAR
                 "Piezas repetidas convertidas en Bloque",
                 "Borradas las caras y piezas que no se ven",
                 "Materiales PBR simples: sin vidrio, barniz ni transparencia",
+                "Todo tiene material, y las etiquetas se ven bien en vista Renderizada",
                 "Purge ejecutado (sin materiales, bloques ni capas sin usar)",
                 "Escala real y unidades correctas",
                 "Base apoyada en Z = 0 y centrada en el origen",
@@ -439,7 +449,9 @@ namespace FlujoAR
             abrir.Click += (s, e) =>
             {
                 var c = CampanaElegida(cmbCampana);
-                if (c != null) AbrirLocal(Consulta(c, PiezaElegida(c, cmbPieza)) + "&exposicion=" + luz().ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+                if (c == null) return;
+                string ruta = Consulta(c, PiezaElegida(c, cmbPieza));
+                AbrirLocal(ruta + (ruta.Contains("?") ? "&" : "?") + "exposicion=" + luz().ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
             };
             btnGuardarLuz.Click += (s, e) =>
             {
@@ -618,6 +630,8 @@ namespace FlujoAR
             resultado.ForeColor = Gris;
             resultado.Text = "Verificando en " + UrlBase + " …";
             var piezas = c.Modelos.Select(m => new { m.Nombre, Local = RutaLocal(m), Web = UrlArchivo(m) }).ToList();
+            string paginaLimpia = Consulta(c, null);
+            if (paginaLimpia.StartsWith("?")) paginaLimpia = null;
 
             new Thread(() =>
             {
@@ -646,6 +660,17 @@ namespace FlujoAR
                 }
 
                 long ignorar;
+                if (paginaLimpia != null)
+                {
+                    int codPagina = Consultar(UrlBase + paginaLimpia + "index.html", "HEAD", out ignorar, out texto);
+                    if (codPagina == 200) lineas.Add("✓  La dirección " + UrlBase + paginaLimpia + " está publicada.");
+                    else
+                    {
+                        todoBien = false;
+                        lineas.Add("✗  La dirección " + UrlBase + paginaLimpia + " todavía no está publicada. Haz Commit y Push (incluye la carpeta " + paginaLimpia.TrimEnd('/') + "), y espera 1–2 minutos.");
+                    }
+                }
+
                 int cod = Consultar(UrlBase + "colecciones.json", "GET", out ignorar, out texto);
                 string localJson = File.Exists(rutaColecciones) ? File.ReadAllText(rutaColecciones, Encoding.UTF8) : "";
                 if (cod == 200 && Normalizar(texto) == Normalizar(localJson)) lineas.Add("✓  La lista de campañas (colecciones.json) está al día.");
@@ -718,8 +743,7 @@ namespace FlujoAR
             col.Controls.Add(Texto("Elige la campaña. Con varias piezas, el QR de la campaña completa deja deslizar entre ellas; también puedes sacar el QR de una sola pieza. El QR funciona cuando ya está publicado (paso 6)."));
             if (!CargarCampanas(col)) return;
 
-            var enlace = new LinkLabel { AutoSize = true, MaximumSize = new Size(S(640), 0), Margin = new Padding(0, S(2), 0, S(8)), LinkBehavior = LinkBehavior.HoverUnderline, UseMnemonic = false };
-            var imagen = new PictureBox { Width = S(200), Height = S(200), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, S(10)) };
+            var enlace = new LinkLabel { AutoSize = true, MaximumSize = new Size(S(640), 0), Margin = new Padding(0, S(2), 0, S(8)), LinkBehavior = LinkBehavior.HoverUnderline, UseMnemonic = false };            var imagen = new PictureBox { Width = S(200), Height = S(200), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, S(10)) };
             var btnPng = Boton("Guardar PNG (impresión)", true);
             var btnSvg = Boton("Guardar SVG (PDF, Illustrator)", false);
             var btnCarpeta = Boton("Abrir carpeta de QRs", false);
@@ -925,8 +949,13 @@ namespace FlujoAR
             return i >= 0 && i < c.Modelos.Count ? c.Modelos[i] : null;
         }
 
-        static string Consulta(Coleccion c, Modelo m)
+        // Dirección relativa al sitio: limpia (alpina/ o alpina/bandeja/) si el generador creó la página;
+        // si no (el enlace choca con una carpeta del proyecto), con parámetros (?coleccion=…)
+        string Consulta(Coleccion c, Modelo m)
         {
+            string limpia = Uri.EscapeDataString(c.Clave) + "/" + (m != null ? Uri.EscapeDataString(m.Id) + "/" : "");
+            string pagina = Path.Combine(raiz, c.Clave, m != null ? m.Id : "", "index.html");
+            if (File.Exists(pagina)) return limpia;
             return "?coleccion=" + Uri.EscapeDataString(c.Clave) + (m != null ? "&pieza=" + Uri.EscapeDataString(m.Id) : "");
         }
 

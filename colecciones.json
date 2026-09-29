@@ -14,5 +14,26 @@
         "archivo": "models/Alpina/01_Exhibidor_Yogo/01_Exhibidor_Yogo.glb"
       }
     ]
+  },
+  "sello-rojo": {
+    "titulo": "Sello Rojo",
+    "carpeta": "Sello Rojo",
+    "modelos": [
+      {
+        "id": "01-isla-2x2",
+        "nombre": "01_Isla_2X2",
+        "archivo": "models/Sello Rojo/01_Isla_2X2/01_Isla_2X2.glb"
+      },
+      {
+        "id": "02-isla",
+        "nombre": "02_Isla",
+        "archivo": "models/Sello Rojo/02_Isla/02_Isla.glb"
+      },
+      {
+        "id": "exhibidor-01",
+        "nombre": "Exhibidor_01",
+        "archivo": "models/Sello Rojo/Exhibidor_01/Exhibidor_01.glb"
+      }
+    ]
   }
 }

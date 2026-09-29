@@ -54,6 +54,8 @@ La mayor parte del peso suele estar en los elementos que se repiten (botellas, t
 - Usa materiales **PBR** básicos: color, rugosidad y metalicidad.
 - Evita **transmisión** (vidrio) y **clearcoat** (barniz): son pesados en celular y el AR de iPhone no los reproduce.
 - **Evita la transparencia** en las texturas si no la necesitas. Si algún material es transparente, el optimizador deja sus texturas en PNG y el archivo pesa más.
+- **Todo objeto debe tener material.** Los que no tienen salen negros y metálicos en el visor (el optimizador lo avisa).
+- **Revisa las etiquetas en vista Renderizada** antes de exportar. Si Rhino exporta el mapeo solo en uno de varios objetos copiados (pasó con 20 de 21 botellas), el optimizador lo repara solo, siempre que sean copias exactas.
 - Ejecuta `Purge` para borrar materiales, bloques y capas sin usar.
 
 ### 1.4 Escala y posición para AR
@@ -119,7 +121,7 @@ powershell -ExecutionPolicy Bypass -File scripts\optimizar-modelo.ps1 "C:\ruta\E
 | Paso | Acción | Por qué |
 |---|---|---|
 | 1 | Crea `models\Campaña\Pieza\` y copia el original a `_original\` | Orden, y poder volver atrás. `_original` no se sube a GitHub. |
-| 2 | Repara el mapeo de objetos copiados y borra datos sin usar | Rhino a veces exporta el mapeo (UV) solo en uno de varios objetos iguales (por ejemplo, 1 de 21 botellas) y los demás se ven sin etiqueta. Si son copias exactas, se les aplica el mismo mapeo. |
+| 2 | Repara el mapeo de objetos copiados, borra datos sin usar y une los objetos que comparten material | Rhino a veces exporta el mapeo (UV) solo en uno de varios objetos iguales (por ejemplo, 1 de 21 botellas) y los demás se ven sin etiqueta: si son copias exactas, se les aplica el mismo mapeo. Unir objetos no cambia la forma, pero una pieza con miles de objetos sueltos pesa mucho más y va lenta en el celular (una isla bajó de 15 MB a 4 MB solo con esto). |
 | 3 | Limita las texturas a 2048 px | En un celular no se nota más resolución |
 | 4 | Convierte las texturas PNG a JPEG | Pesan 5 a 7 veces menos. Se omite si hay transparencia. |
 | 5 | Comprime la geometría con Draco | Reduce la geometría a una fracción. Compatible con el visor web y el AR de Android. |

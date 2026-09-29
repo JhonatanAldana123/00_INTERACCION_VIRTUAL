@@ -68,7 +68,8 @@ Ese objeto no tiene material asignado en Rhino: el exportador le pone uno negro 
 | `herramientas\FlujoAR\Qr.cs` | Generador de QR propio (ISO/IEC 18004, corrección M), sin dependencias |
 | `herramientas\FlujoAR\Colecciones.cs` | Lee `colecciones.json` |
 | `herramientas\FlujoAR\Servidor.cs` | Servidor local para la vista previa del paso 4 |
-| `scripts\generar-colecciones.js` | Lee las carpetas de `models\` y genera `colecciones.json` (y `_campana.json` de cada campaña) |
+| `scripts\generar-colecciones.js` | Lee las carpetas de `models\` y genera `colecciones.json`, el `_campana.json` de cada campaña y las direcciones limpias (`alpina\index.html`…, anotadas en `_paginas.json`) |
+| `sitio.json` | Dirección del sitio publicado, usada para los QR |
 | `scripts\optimizar-modelo.ps1` | El optimizador que ejecuta el paso 3 (el mismo de `optimizar.bat`) |
 
-Para cambiar el enlace base de los QR (por ejemplo, si cambia el usuario de GitHub), edita `UrlBase` en `Ventana.cs` y `$UrlBase` en `scripts\optimizar-modelo.ps1`.
+Para cambiar la dirección de los QR (por ejemplo, con un dominio propio), edita `sitio.json`. Flujo AR y el optimizador la leen de ahí.

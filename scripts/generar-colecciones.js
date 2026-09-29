@@ -93,7 +93,48 @@ const resultado = {};
 for (const c of campanas) resultado[c.enlace] = { titulo: c.titulo, carpeta: c.carpeta, exposicion: c.exposicion, modelos: c.modelos };
 fs.writeFileSync(salida, JSON.stringify(resultado, null, 2) + '\n', 'utf8');
 
+// ── Direcciones limpias: /<campaña>/ y /<campaña>/<pieza>/ ──────────────
+// Cada una es una copia de index.html con la campaña (y pieza) ya elegida. Así el enlace del QR
+// queda como innercia.github.io/alpina en lugar de ?coleccion=alpina.
+// Las carpetas generadas se anotan en _paginas.json para poder borrarlas si la campaña desaparece.
+const RESERVADAS = new Set(['models', 'docs', 'scripts', 'herramientas', 'qrs', 'node_modules']);
+const rutaManifiesto = path.join(proyecto, '_paginas.json');
+const anteriores = (leerJson(rutaManifiesto) || {}).carpetas || [];
+const plantilla = fs.readFileSync(path.join(proyecto, 'index.html'), 'utf8');
+const generadas = [];
+
+function escribirPagina(relativa, profundidad, preset) {
+  const destino = path.join(proyecto, relativa);
+  fs.mkdirSync(destino, { recursive: true });
+  const cabeza = `<head>\n  <base href="${'../'.repeat(profundidad)}">\n  <script>window.PRESET = ${JSON.stringify(preset)};</script>`;
+  fs.writeFileSync(path.join(destino, 'index.html'), plantilla.replace('<head>', cabeza), 'utf8');
+  generadas.push(relativa.replace(/\\/g, '/'));
+}
+
+for (const c of campanas) {
+  const ocupada = RESERVADAS.has(c.enlace) ||
+    (fs.existsSync(path.join(proyecto, c.enlace)) && !anteriores.includes(c.enlace));
+  if (ocupada) {
+    avisos.push(`La campaña "${c.titulo}" no tiene dirección limpia: "${c.enlace}" ya es una carpeta del proyecto. Se usa ?coleccion=${c.enlace}`);
+    continue;
+  }
+  escribirPagina(c.enlace, 1, { coleccion: c.enlace });
+  if (c.modelos.length > 1) {
+    for (const m of c.modelos) escribirPagina(path.join(c.enlace, m.id), 2, { coleccion: c.enlace, pieza: m.id });
+  }
+}
+
+// Borra las páginas que ya no corresponden a ninguna campaña o pieza
+for (const vieja of anteriores.filter(a => !generadas.includes(a)).sort((a, b) => b.length - a.length)) {
+  const dir = path.join(proyecto, vieja);
+  try {
+    fs.rmSync(path.join(dir, 'index.html'), { force: true });
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+  } catch { /* si no se puede borrar, queda como estaba */ }
+}
+fs.writeFileSync(rutaManifiesto, JSON.stringify({ carpetas: generadas }, null, 2) + '\n', 'utf8');
+
 console.log(JSON.stringify({
-  campanas: campanas.map(c => ({ enlace: c.enlace, titulo: c.titulo, piezas: c.modelos.length })),
+  campanas: campanas.map(c => ({ enlace: c.enlace, titulo: c.titulo, piezas: c.modelos.length, limpia: generadas.includes(c.enlace) })),
   avisos,
 }));

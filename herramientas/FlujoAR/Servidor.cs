@@ -77,8 +77,18 @@ namespace FlujoAR
             try
             {
                 string relativa = Uri.UnescapeDataString(ctx.Request.Url.AbsolutePath).TrimStart('/');
-                if (relativa == "") relativa = "index.html";
                 string ruta = Path.GetFullPath(Path.Combine(raiz, relativa.Replace('/', '\\')));
+
+                // Carpetas (direcciones limpias como /alpina/): se sirve su index.html
+                if (Directory.Exists(ruta))
+                {
+                    if (!ctx.Request.Url.AbsolutePath.EndsWith("/"))
+                    {
+                        ctx.Response.Redirect(ctx.Request.Url.AbsolutePath + "/" + ctx.Request.Url.Query);
+                        return;
+                    }
+                    ruta = Path.Combine(ruta, "index.html");
+                }
 
                 // Solo archivos dentro de la carpeta del proyecto
                 if (!ruta.StartsWith(raiz, StringComparison.OrdinalIgnoreCase) || !File.Exists(ruta))

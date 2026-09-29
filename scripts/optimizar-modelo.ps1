@@ -8,7 +8,8 @@
     models\<Campaña>\<Pieza>\_original\<Pieza>.glb   exportación de Rhino (no se sube a GitHub)
 
   1. Guarda una copia del original en models\<Campaña>\<Pieza>\_original\
-  2. Repara el mapeo (UV) de objetos copiados y borra datos sin usar (reparar-uv.js + prune)
+  2. Repara el mapeo (UV) de objetos copiados, borra datos sin usar y une los objetos que
+     comparten material (reparar-uv.js + prune + dedup + flatten + join)
   3. Limita las texturas a 2048 px (resize)
   4. Convierte las texturas PNG a JPEG, salvo que haya materiales transparentes (jpeg)
   5. Comprime la geometría con Draco (draco)
@@ -36,6 +37,11 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $GltfTransform = '@gltf-transform/cli@4.5.1'   # versión fija para que el resultado sea siempre igual
 $UrlBase = 'https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/'
+# La dirección del sitio publicado se configura en sitio.json
+try {
+  $sitio = Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'sitio.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($sitio.url -like 'http*') { $UrlBase = $sitio.url.TrimEnd('/') + '/' }
+} catch { }
 
 $Proyecto = Split-Path -Parent $PSScriptRoot
 $Models = Join-Path $Proyecto 'models'
@@ -102,11 +108,16 @@ New-Item -ItemType Directory -Force $Temp | Out-Null
 
 # ── 2. Mapeo de copias y datos sin usar ────────────────────
 # Rhino a veces exporta el mapeo (UV) solo en uno de varios objetos copiados: se copia a los demás
-Paso '2/5 Reparando mapeo de copias y borrando datos sin usar'
+Paso '2/5 Reparando mapeo de copias, borrando datos sin usar y uniendo objetos'
 $reparacion = node (Join-Path $PSScriptRoot 'reparar-uv.js') $Respaldo "$Temp\0.glb" | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Falló la reparación del mapeo de texturas.' }
 if ($reparacion.reparados -gt 0) { Write-Host "   Mapeo reparado en $($reparacion.reparados) objetos copiados" -ForegroundColor Green }
-Ejecutar @('prune', "$Temp\0.glb", "$Temp\1.glb")
+Ejecutar @('prune', "$Temp\0.glb", "$Temp\p.glb")
+# Une los objetos que comparten material: la forma no cambia, pero miles de objetos sueltos
+# inflan el archivo (una ficha por objeto) y obligan al celular a dibujarlos uno por uno
+Ejecutar @('dedup', "$Temp\p.glb", "$Temp\d.glb")
+Ejecutar @('flatten', "$Temp\d.glb", "$Temp\f.glb")
+Ejecutar @('join', "$Temp\f.glb", "$Temp\1.glb")
 
 # ── 3. Tamaño de texturas ──────────────────────────────────
 Paso "3/5 Limitando texturas a $MaxTextura px"
@@ -152,8 +163,12 @@ Write-Host "Texturas:    $(MB $despues.bytesTexturas) en $($despues.texturas.Cou
 Write-Host "Archivo:     models\$Campana\$Nombre\$Nombre.glb"
 if ($enlace) {
   Write-Host "Campaña:     $Campana ($total pieza$(if ($total -ne 1) { 's' }))"
-  Write-Host "QR campaña:  $UrlBase`?coleccion=$enlace"
-  if ($total -gt 1 -and $idPieza) { Write-Host "QR pieza:    $UrlBase`?coleccion=$enlace&pieza=$idPieza" }
+  # Dirección limpia si el generador creó la página (carpeta <enlace>\index.html)
+  $limpia = Test-Path (Join-Path (Join-Path $Proyecto $enlace) 'index.html')
+  Write-Host "QR campaña:  $(if ($limpia) { "$UrlBase$enlace/" } else { "$UrlBase`?coleccion=$enlace" })"
+  if ($total -gt 1 -and $idPieza) {
+    Write-Host "QR pieza:    $(if ($limpia) { "$UrlBase$enlace/$idPieza/" } else { "$UrlBase`?coleccion=$enlace&pieza=$idPieza" })"
+  }
 }
 foreach ($a in @($resumen.avisos)) { if ($a) { Write-Host "AVISO: $a" -ForegroundColor Yellow } }
 
