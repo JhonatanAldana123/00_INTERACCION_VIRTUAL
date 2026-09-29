@@ -71,6 +71,27 @@ for (const p of rotas) {
   }
 }
 
+// Quita líneas y puntos sueltos (curvas o bordes exportados desde Rhino): el AR de Android y de
+// iPhone solo acepta superficies (triángulos) y rechaza el archivo completo si encuentra una línea.
+const TRIANGULOS = new Set([4, 5, 6]);   // triángulos, tira y abanico
+let lineasQuitadas = 0;
+const nuevoIndice = [];
+const mallas = [];
+(gltf.meshes || []).forEach((m, i) => {
+  const antes = m.primitives.length;
+  m.primitives = m.primitives.filter(p => TRIANGULOS.has(p.mode == null ? 4 : p.mode));
+  lineasQuitadas += antes - m.primitives.length;
+  if (m.primitives.length) { nuevoIndice[i] = mallas.length; mallas.push(m); }
+});
+if (lineasQuitadas) {
+  gltf.meshes = mallas;
+  for (const n of gltf.nodes || []) {
+    if (n.mesh == null) continue;
+    if (nuevoIndice[n.mesh] == null) delete n.mesh;   // la malla solo tenía líneas: el nodo queda vacío
+    else n.mesh = nuevoIndice[n.mesh];
+  }
+}
+
 // Reescribe el .glb: el JSON cambia, el bloque binario queda igual
 let json = Buffer.from(JSON.stringify(gltf));
 if (json.length % 4) json = Buffer.concat([json, Buffer.alloc(4 - (json.length % 4), 0x20)]);
@@ -84,4 +105,4 @@ cabJson.writeUInt32LE(json.length, 0);
 cabJson.writeUInt32LE(0x4e4f534a, 4);
 fs.writeFileSync(salida, Buffer.concat([cabecera, cabJson, json, resto]));
 
-console.log(JSON.stringify({ reparados, sinReparar: rotas.length - reparados }));
+console.log(JSON.stringify({ reparados, sinReparar: rotas.length - reparados, lineasQuitadas }));

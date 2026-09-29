@@ -30,6 +30,7 @@
       height: 100%;
       width: 100%;
       overflow: hidden;
+      overscroll-behavior: none;   /* sin "tirar para recargar" mientras se gira el modelo */
       background: var(--bg);
       color: var(--fg);
       font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
@@ -299,7 +300,7 @@
     environment-image="neutral"
     tone-mapping="neutral"
     exposure="0.8"
-    touch-action="pan-y"
+    touch-action="none"
   ></model-viewer>
 
   <!-- ── BARRA SUPERIOR ── -->

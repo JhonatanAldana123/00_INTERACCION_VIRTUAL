@@ -112,6 +112,7 @@ Paso '2/5 Reparando mapeo de copias, borrando datos sin usar y uniendo objetos'
 $reparacion = node (Join-Path $PSScriptRoot 'reparar-uv.js') $Respaldo "$Temp\0.glb" | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Falló la reparación del mapeo de texturas.' }
 if ($reparacion.reparados -gt 0) { Write-Host "   Mapeo reparado en $($reparacion.reparados) objetos copiados" -ForegroundColor Green }
+if ($reparacion.lineasQuitadas -gt 0) { Write-Host "   Se quitaron $($reparacion.lineasQuitadas) lineas o puntos sueltos (el AR no los acepta)" -ForegroundColor Green }
 Ejecutar @('prune', "$Temp\0.glb", "$Temp\p.glb")
 # Une los objetos que comparten material: la forma no cambia, pero miles de objetos sueltos
 # inflan el archivo (una ficha por objeto) y obligan al celular a dibujarlos uno por uno
