@@ -1,3 +1,9 @@
+# Configuración local de Claude
+.claude/
+
+# Respaldo de modelos sin optimizar
+models/_originales/
+
 # Sistema
 .DS_Store
 Thumbs.db

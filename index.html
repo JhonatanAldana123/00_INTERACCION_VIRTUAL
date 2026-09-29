@@ -6,7 +6,8 @@
   <title>Interacción Virtual AR</title>
 
   <!-- model-viewer: maneja .glb (Android) y .usdz (iOS) con AR nativo -->
-  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+  <!-- Versión fija para que una actualización de la librería no rompa el visor -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@4.2.0/dist/model-viewer.min.js"></script>
 
   <style>
     /* ─── TOKENS ─────────────────────────────────────── */
@@ -213,7 +214,6 @@
     environment-image="neutral"
     exposure="1"
     touch-action="pan-y"
-    reveal="interaction"
   ></model-viewer>
 
   <!-- ── BARRA SUPERIOR ── -->
@@ -282,11 +282,8 @@
       // Etiqueta del modelo
       document.getElementById('modelLabel').textContent = capitalizar(nombre);
 
-      // Cargar modelo
+      // Cargar modelo. En iPhone, model-viewer genera el .usdz desde el .glb
       viewer.setAttribute('src', `models/${modelo}.glb`);
-      if (isIOS) {
-        viewer.setAttribute('ios-src', `models/${modelo}.usdz`);
-      }
 
       // Cuando carga correctamente
       viewer.addEventListener('load', () => {
