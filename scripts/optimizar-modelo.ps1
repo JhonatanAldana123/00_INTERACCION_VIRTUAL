@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Stop'
 # UTF-8 para leer bien la salida de node (nombres de campaña con tildes y ñ)
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $GltfTransform = '@gltf-transform/cli@4.5.1'   # versión fija para que el resultado sea siempre igual
-$UrlBase = 'https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/'
+$UrlBase = 'https://innerciaar.com/'
 # La dirección del sitio publicado se configura en sitio.json
 try {
   $sitio = Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'sitio.json') -Raw -Encoding UTF8 | ConvertFrom-Json

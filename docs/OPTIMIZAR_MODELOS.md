@@ -100,8 +100,8 @@ Triangulos:  64868
 Texturas:    0,66 MB en 13 imagenes (maximo 2048 px)
 Archivo:     models\Campaña Alpina\Exhibidor01\Exhibidor01.glb
 Campaña:     Campaña Alpina (2 piezas)
-QR campaña:  https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/?coleccion=campana-alpina
-QR pieza:    https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/?coleccion=campana-alpina&pieza=exhibidor01
+QR campaña:  https://innerciaar.com/campana-alpina/
+QR pieza:    https://innerciaar.com/campana-alpina/exhibidor01/
 ```
 
 ### Opción C: desde la terminal (para usar otras opciones)

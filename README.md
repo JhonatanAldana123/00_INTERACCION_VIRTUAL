@@ -3,7 +3,7 @@
 
 Página web que carga modelos 3D en pantalla completa y activa Realidad Aumentada nativa en iOS (Quick Look) y Android (Scene Viewer) desde un código QR incrustado en PDF.
 
-Sitio publicado: https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/
+Sitio publicado: https://innerciaar.com/
 
 > **La forma más fácil de trabajar:** doble clic en **`FlujoAR.bat`**. Se abre una ventana que te guía en 7 pasos, desde preparar la pieza en Rhino hasta guardar el QR. Guía: [docs/FLUJO_AR.md](docs/FLUJO_AR.md)
 
@@ -56,7 +56,7 @@ Solo hace falta el `.glb`: en iPhone, el visor genera el `.usdz` automáticament
 
 | QR | Enlace |
 |---|---|
-| Campaña completa | `https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/campana-alpina/` |
+| Campaña completa | `https://innerciaar.com/campana-alpina/` |
 | Una sola pieza | `…/campana-alpina/bandeja01/` |
 
 Las carpetas de la raíz con nombre de campaña (`alpina/`…) son esas direcciones limpias: las crea Flujo AR, no las edites a mano. La dirección base del sitio está en `sitio.json`.

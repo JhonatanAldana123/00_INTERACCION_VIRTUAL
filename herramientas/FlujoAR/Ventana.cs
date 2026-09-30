@@ -22,7 +22,7 @@ namespace FlujoAR
     class Ventana : Form
     {
         // Dirección del sitio publicado: se lee de sitio.json (un solo lugar para cambiarla)
-        readonly string UrlBase = "https://jhonatanaldana123.github.io/00_INTERACCION_VIRTUAL/";
+        readonly string UrlBase = "https://innerciaar.com/";
         static readonly Regex Ansi = new Regex(@"\x1B\[[0-9;]*[A-Za-z]");
 
         static readonly Color Oscuro = Color.FromArgb(16, 19, 26);
