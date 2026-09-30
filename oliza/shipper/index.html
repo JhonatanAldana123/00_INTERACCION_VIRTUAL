@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base href="../../">
+  <script>window.PRESET = {"coleccion":"oliza","pieza":"shipper"};</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- Barra del navegador del mismo negro del visor, para que se integre con la pantalla -->
+  <meta name="theme-color" content="#08090D">
+  <meta name="color-scheme" content="dark">
+  <title>Interacción Virtual AR</title>
+
+  <!-- model-viewer: maneja .glb (Android) y .usdz (iOS) con AR nativo -->
+  <!-- Versión fija para que una actualización de la librería no rompa el visor -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@4.2.0/dist/model-viewer.min.js"></script>
+
+  <style>
+    /* ─── TOKENS ─────────────────────────────────────── */
+    :root {
+      --bg:       #08090D;
+      --fg:       #E8EBF4;
+      --fg-dim:   rgba(232,235,244,0.45);
+      --accent:   #00E5C8;
+      --accent-glow: rgba(0,229,200,0.25);
+      --overlay-top: linear-gradient(to bottom, rgba(8,9,13,0.75) 0%, transparent 100%);
+      --overlay-bot: linear-gradient(to top,   rgba(8,9,13,0.85) 0%, transparent 100%);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;   /* sin "tirar para recargar" mientras se gira el modelo */
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── VISOR 3D ────────────────────────────────────── */
+    model-viewer {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      --progress-bar-color: var(--accent);
+      --progress-bar-height: 2px;
+    }
+
+    /* Ocultar el botón AR nativo de model-viewer (usamos el nuestro) */
+    model-viewer::part(default-ar-button) { display: none; }
+
+    /* ─── BARRA SUPERIOR ──────────────────────────────── */
+    .topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 20;
+      padding: max(env(safe-area-inset-top, 0px), 16px) 20px 48px;
+      background: var(--overlay-top);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .brand {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+    }
+
+    .model-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg-dim);
+      text-align: right;
+      text-transform: capitalize;
+      letter-spacing: 0.02em;
+    }
+
+    /* ─── CONTROLES INFERIORES ────────────────────────── */
+    .controls {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      padding: 60px 24px max(env(safe-area-inset-bottom, 0px), 28px);
+      background: var(--overlay-bot);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      touch-action: pan-y;  /* el deslizamiento horizontal llega al selector de modelos */
+    }
+
+    .ar-btn {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--accent);
+      color: #08090D;
+      border: none;
+      border-radius: 100px;
+      padding: 15px 30px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+      box-shadow: 0 0 40px var(--accent-glow);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .ar-btn:active {
+      transform: scale(0.96);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--fg-dim);
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+
+    /* ─── PANTALLA BIENVENIDA (sin ?modelo) ────────────── */
+    .screen {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      text-align: center;
+      padding: 40px 32px;
+      gap: 0;
+    }
+
+    .screen-icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 24px;
+      opacity: 0.6;
+    }
+
+    .screen h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+
+    .screen p {
+      font-size: 14px;
+      color: var(--fg-dim);
+      max-width: 260px;
+      line-height: 1.6;
+    }
+
+    .screen .badge {
+      margin-top: 24px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid rgba(0,229,200,0.3);
+      padding: 5px 12px;
+      border-radius: 100px;
+    }
+
+    /* ─── LOADING ─────────────────────────────────────── */
+    .loading {
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      transition: opacity 0.4s ease;
+    }
+
+    .loading.fade { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 2px solid rgba(255,255,255,0.08);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── SELECTOR DE COLECCIÓN ───────────────────────── */
+    .picker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      max-width: 360px;
+      touch-action: pan-y;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .nav-btn {
+      flex: none;
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      border: 1px solid rgba(232,235,244,0.18);
+      background: rgba(8,9,13,0.55);
+      color: var(--fg);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+
+    .nav-btn:active { transform: scale(0.92); border-color: var(--accent); }
+
+    .picker-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .picker-name {
+      font-size: 14px;
+      font-weight: 600;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 10px rgba(8,9,13,0.9);
+      transition: opacity 0.2s ease;
+    }
+
+    .picker.cargando .picker-name { opacity: 0.45; }
+
+    .dots { display: flex; gap: 6px; }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(232,235,244,0.25);
+      transition: background 0.2s ease, width 0.2s ease;
+    }
+
+    .dot.activo { width: 18px; border-radius: 3px; background: var(--accent); }
+
+    /* ─── AVISO ───────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      left: 50%;
+      top: max(env(safe-area-inset-top, 0px), 16px);
+      transform: translateX(-50%);
+      z-index: 40;
+      max-width: calc(100% - 32px);
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: rgba(20,22,30,0.95);
+      border: 1px solid rgba(232,235,244,0.12);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* ─── UTILIDADES ──────────────────────────────────── */
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- ── VISOR 3D ── -->
+  <model-viewer
+    id="viewer"
+    ar
+    ar-modes="scene-viewer webxr quick-look"
+    ar-usdz-max-texture-size="1024"
+    camera-controls
+    auto-rotate
+    auto-rotate-delay="1500"
+    rotation-per-second="10deg"
+    shadow-intensity="1"
+    shadow-softness="1"
+    environment-image="neutral"
+    tone-mapping="neutral"
+    exposure="0.8"
+    touch-action="none"
+  ></model-viewer>
+
+  <!-- ── BARRA SUPERIOR ── -->
+  <div class="topbar" id="topbar" hidden>
+    <span class="brand">Interacción Virtual</span>
+    <span class="model-label" id="modelLabel"></span>
+  </div>
+
+  <!-- ── CONTROLES ── -->
+  <div class="controls" id="controls" hidden>
+    <!-- Selector de modelos: solo en colecciones con 2 o más modelos -->
+    <div class="picker" id="picker" hidden>
+      <button class="nav-btn" id="prevBtn" aria-label="Modelo anterior">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="picker-info">
+        <span class="picker-name" id="pickerName"></span>
+        <div class="dots" id="dots"></div>
+      </div>
+      <button class="nav-btn" id="nextBtn" aria-label="Modelo siguiente">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </div>
+
+    <button class="ar-btn" id="arBtn" onclick="activarAR()">
+      <!-- Icono AR -->
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+        <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+        <path d="M12 8l-4 2.5v5L12 18l4-2.5v-5L12 8z"/>
+      </svg>
+      Ver en Realidad Aumentada
+    </button>
+    <span class="hint" id="hintText">Arrastra para rotar · Pellizca para hacer zoom</span>
+  </div>
+
+  <!-- ── PANTALLA DE BIENVENIDA ── -->
+  <div class="screen" id="welcome" hidden>
+    <svg class="screen-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5">
+      <polygon points="32,4 60,20 60,44 32,60 4,44 4,20" stroke-opacity="0.5"/>
+      <polygon points="32,16 48,25 48,43 32,52 16,43 16,25"/>
+      <circle cx="32" cy="34" r="5" fill="currentColor" opacity="0.4"/>
+    </svg>
+    <h1 id="welcomeTitle">Interacción Virtual</h1>
+    <p id="welcomeMsg">Escanea el código QR de la presentación para visualizar el modelo en 3D y Realidad Aumentada.</p>
+    <span class="badge">iOS · Android · Web</span>
+  </div>
+
+  <!-- ── AVISO ── -->
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- ── LOADING ── -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+  </div>
+
+
+  <script>
+    // ── Parámetros URL ──────────────────────────────────────
+    // Dirección limpia (la genera scripts/generar-colecciones.js):  /campana-alpina/   y   /campana-alpina/bandeja01/
+    // Campaña:    index.html?coleccion=campana-alpina           (todas sus piezas; colecciones.json)
+    //             index.html?coleccion=campana-alpina&i=2       (abre en la 2.ª pieza)
+    // Una pieza:  index.html?coleccion=campana-alpina&pieza=bandeja01
+    // Un modelo:  index.html?modelo=Exh_opc_01                  (formato anterior: models/<id>/<id>.glb)
+    // Dirección limpia (/alpina/ o /alpina/bandeja/): la página generada trae la campaña en window.PRESET
+    const preset    = window.PRESET || {};
+    const params    = new URLSearchParams(location.search);
+    const modelo    = params.get('modelo');
+    const coleccion = preset.coleccion || params.get('coleccion');
+    const pieza     = preset.pieza || params.get('pieza');
+    // Luz: &exposicion=0.7 la cambia solo en esta vista (la usa la vista previa de Flujo AR)
+    const exposicionUrl = parseFloat(params.get('exposicion'));
+
+    // ── Elementos ───────────────────────────────────────────
+    const viewer     = document.getElementById('viewer');
+    const loading    = document.getElementById('loading');
+    const welcome    = document.getElementById('welcome');
+    const controls   = document.getElementById('controls');
+    const topbar     = document.getElementById('topbar');
+    const hintText   = document.getElementById('hintText');
+    const arBtn      = document.getElementById('arBtn');
+    const picker     = document.getElementById('picker');
+    const pickerName = document.getElementById('pickerName');
+    const dots       = document.getElementById('dots');
+    const toast      = document.getElementById('toast');
+
+    // ── Detección de OS ─────────────────────────────────────
+    const isIOS     = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isAndroid = /Android/.test(navigator.userAgent);
+    // ── Estado ──────────────────────────────────────────────
+    let lista = [];          // [{ id, nombre }] — un solo elemento en modo modelo
+    let actual = 0;
+    let interfazVisible = false;
+
+    // ── Flujo principal ─────────────────────────────────────
+    viewer.addEventListener('load', () => {
+      mostrarInterfaz();
+      picker.classList.remove('cargando');
+      precargar(actual + 1);
+    });
+
+    viewer.addEventListener('error', () => {
+      const m = lista[actual];
+      if (!m) return;
+      const ruta = decodeURI(new URL(rutaModelo(m)).pathname).replace(/^\//, '');
+      if (lista.length > 1) {
+        // En una colección, un modelo faltante no bloquea a los demás
+        mostrarInterfaz();
+        picker.classList.remove('cargando');
+        avisar(`No se encontró "${m.nombre}". Verifica que esté en /${ruta}`);
+      } else {
+        mostrarBienvenida('Modelo no encontrado', `No se encontró "${m.nombre}". Verifica que el archivo esté en /${ruta}`);
+      }
+    });
+
+    iniciar();
+
+    async function iniciar() {
+      if (coleccion) {
+        let definicion;
+        try {
+          // no-cache: los cambios en colecciones.json se ven sin esperar la caché del navegador
+          const res = await fetch('colecciones.json', { cache: 'no-cache' });
+          definicion = (await res.json())[coleccion];
+        } catch (e) {
+          mostrarBienvenida('Campaña no disponible', 'No se pudo leer la lista de campañas (colecciones.json).');
+          return;
+        }
+        if (!definicion || !definicion.modelos?.length) {
+          mostrarBienvenida('Campaña no encontrada', `No existe la campaña "${coleccion}" o todavía no tiene piezas publicadas.`);
+          return;
+        }
+        // Cada modelo puede ser "Exh_opc_01" o { "id", "nombre", "archivo" }
+        lista = definicion.modelos.map(m => typeof m === 'string'
+          ? { id: m, nombre: m }
+          : { id: m.id, nombre: m.nombre || m.id, archivo: m.archivo, version: m.version });
+        if (definicion.titulo) document.querySelector('.brand').textContent = definicion.titulo;
+        // Luz guardada para la campaña en Flujo AR (paso 4)
+        if (typeof definicion.exposicion === 'number') viewer.exposure = definicion.exposicion;
+        if (Number.isFinite(exposicionUrl)) viewer.exposure = exposicionUrl;
+
+        // QR de una sola pieza de la campaña
+        if (pieza) {
+          lista = lista.filter(m => m.id === pieza);
+          if (!lista.length) {
+            mostrarBienvenida('Pieza no encontrada', `La campaña "${definicion.titulo || coleccion}" no tiene la pieza "${pieza}".`);
+            return;
+          }
+        }
+        if (lista.length > 1) armarSelector();
+
+        const inicio = parseInt(params.get('i'), 10) - 1;
+        mostrarModelo(inicio >= 0 && inicio < lista.length ? inicio : 0);
+      } else if (modelo) {
+        const nombre = params.get('nombre') || modelo.replace(/-/g, ' ');
+        lista = [{ id: modelo, nombre }];
+        mostrarModelo(0);
+      } else {
+        ocultarLoading();
+        welcome.hidden = false;
+      }
+    }
+
+    // ── Cambiar de modelo ───────────────────────────────────
+    function mostrarModelo(i) {
+      actual = (i + lista.length) % lista.length;
+      const m = lista[actual];
+      document.getElementById('modelLabel').textContent = capitalizar(m.nombre);
+
+      if (lista.length > 1) {
+        pickerName.textContent = m.nombre;
+        picker.classList.add('cargando');
+        [...dots.children].forEach((d, k) => d.classList.toggle('activo', k === actual));
+        // Recordar la posición en la URL (sin recargar) para compartir o recargar
+        // Ruta absoluta: las páginas limpias usan <base href="../">, que cambiaría una ruta relativa
+        history.replaceState(null, '', location.pathname +
+          (preset.coleccion ? `?i=${actual + 1}` : `?coleccion=${encodeURIComponent(coleccion)}&i=${actual + 1}`));
+      }
+
+      // En iPhone, model-viewer genera el .usdz desde el .glb
+      viewer.setAttribute('src', rutaModelo(m));
+      viewer.setAttribute('alt', m.nombre);
+    }
+
+    function armarSelector() {
+      picker.hidden = false;
+      dots.innerHTML = lista.map(() => '<span class="dot"></span>').join('');
+      document.getElementById('prevBtn').onclick = () => mostrarModelo(actual - 1);
+      document.getElementById('nextBtn').onclick = () => mostrarModelo(actual + 1);
+
+      // Deslizar sobre la barra inferior (no sobre el modelo, que usa el arrastre para rotar)
+      let x0 = null;
+      controls.addEventListener('pointerdown', e => { x0 = e.clientX; });
+      controls.addEventListener('pointerup', e => {
+        if (x0 === null) return;
+        const dx = e.clientX - x0;
+        x0 = null;
+        if (Math.abs(dx) > 50) mostrarModelo(actual + (dx < 0 ? 1 : -1));
+      });
+
+      document.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight') mostrarModelo(actual + 1);
+        if (e.key === 'ArrowLeft')  mostrarModelo(actual - 1);
+      });
+    }
+
+    // Descarga el siguiente modelo en segundo plano para que el cambio sea rápido
+    function precargar(i) {
+      if (lista.length < 2) return;
+      const m = lista[(i + lista.length) % lista.length];
+      fetch(rutaModelo(m)).catch(() => {});
+    }
+
+    // Piezas de campaña: la ruta viene en colecciones.json (las carpetas pueden tener tildes y espacios).
+    // Formato anterior: models/<id>/<id>.glb
+    // Se devuelve la dirección COMPLETA: model-viewer arma el enlace para el AR de Android (Scene Viewer)
+    // con la dirección de la página e ignora <base>, así que en las páginas limpias (/alpina/) una ruta
+    // relativa apuntaría a /alpina/models/… y el AR fallaría.
+    function rutaModelo(m) {
+      const relativa = m.archivo ? encodeURI(m.archivo) : `models/${m.id}/${m.id}.glb`;
+      const url = new URL(relativa, document.baseURI);
+      // Versión del contenido: al reoptimizar cambia, y así nadie usa una copia vieja en caché
+      if (m.version) url.searchParams.set('v', m.version);
+      return url.href;
+    }
+
+    // ── Interfaz ────────────────────────────────────────────
+    function mostrarInterfaz() {
+      if (interfazVisible) return;
+      interfazVisible = true;
+      ocultarLoading();
+      topbar.hidden = false;
+      controls.hidden = false;
+
+      // Sin AR disponible (computador), se oculta el botón y se sugiere abrir en el celular
+      arBtn.hidden = !viewer.canActivateAR;
+      if (isIOS || isAndroid) hintText.textContent = 'Toca "Ver en AR" para proyectar en tu espacio';
+      else hintText.textContent = 'Arrastra para rotar · Scroll para zoom · Abre desde tu celular para AR';
+    }
+
+    function mostrarBienvenida(titulo, mensaje) {
+      ocultarLoading();
+      document.getElementById('welcomeTitle').textContent = titulo;
+      document.getElementById('welcomeMsg').textContent   = mensaje;
+      welcome.hidden = false;
+    }
+
+    let toastTimer;
+    function avisar(texto) {
+      toast.textContent = texto;
+      toast.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.hidden = true; }, 4000);
+    }
+
+    // ── Activar AR ──────────────────────────────────────────
+    function activarAR() {
+      try {
+        viewer.activateAR();
+      } catch (e) {
+        // Fallback: simular click en el botón interno de model-viewer
+        const btn = viewer.shadowRoot?.querySelector('[slot="ar-button"], .ar-button');
+        if (btn) btn.click();
+      }
+    }
+
+    // ── Helpers ─────────────────────────────────────────────
+    function ocultarLoading() {
+      loading.classList.add('fade');
+      setTimeout(() => { loading.hidden = true; }, 420);
+    }
+
+    function capitalizar(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+  </script>
+
+</body>
+</html>

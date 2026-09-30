@@ -17,6 +17,36 @@
       }
     ]
   },
+  "oliza": {
+    "titulo": "OLIZA",
+    "carpeta": "OLIZA",
+    "modelos": [
+      {
+        "id": "shipper",
+        "nombre": "SHIPPER",
+        "archivo": "models/OLIZA/SHIPPER/SHIPPER.glb",
+        "version": "1834d6bbc5"
+      },
+      {
+        "id": "minishipper-mixto",
+        "nombre": "MINISHIPPER MIXTO",
+        "archivo": "models/OLIZA/MINISHIPPER MIXTO/MINISHIPPER MIXTO.glb",
+        "version": "8206172728"
+      },
+      {
+        "id": "minishipper-mo",
+        "nombre": "MINISHIPPER MO",
+        "archivo": "models/OLIZA/MINISHIPPER MO/MINISHIPPER MO.glb",
+        "version": "eeeffe932b"
+      },
+      {
+        "id": "minishipper-ro",
+        "nombre": "MINISHIPPER RO",
+        "archivo": "models/OLIZA/MINISHIPPER RO/MINISHIPPER RO.glb",
+        "version": "1e96ff2066"
+      }
+    ]
+  },
   "sello-rojo": {
     "titulo": "Sello Rojo",
     "carpeta": "Sello Rojo",
