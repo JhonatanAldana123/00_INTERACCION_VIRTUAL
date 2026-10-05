@@ -1,6 +1,7 @@
 // Genera colecciones.json a partir de las carpetas de models/:
 //
 //   models/<Campaña>/<Pieza>/<Pieza>.glb
+//   models/<Campaña>/<Pieza>/<Pieza>.usdz   (opcional: pieza animada, el USDZ animado para iPhone)
 //
 // Cada carpeta raíz es una campaña; cada subcarpeta con su .glb es una pieza.
 // El enlace de cada campaña (lo que va en el QR) se guarda la primera vez en
@@ -83,9 +84,14 @@ for (const carpeta of subcarpetas(carpetaModels)) {
     idsUsados.add(id);
     // Versión = huella del contenido: cambia al reoptimizar la pieza, y el visor la agrega a la dirección
     // (?v=…) para que los celulares y la app de AR no usen una copia vieja guardada en caché
-    const version = require('crypto').createHash('sha1')
-      .update(fs.readFileSync(path.join(dirCampana, p, p + '.glb'))).digest('hex').slice(0, 10);
-    return { id, nombre: p, archivo: `models/${carpeta}/${p}/${p}.glb`, version };
+    const huella = require('crypto').createHash('sha1').update(fs.readFileSync(path.join(dirCampana, p, p + '.glb')));
+    // Pieza animada: trae su propio .usdz animado para iPhone (el que genera el visor desde el .glb sale quieto).
+    // Para no leer todo el archivo, su huella es tamaño + fecha
+    const rutaUsdz = path.join(dirCampana, p, p + '.usdz');
+    const usdz = fs.existsSync(rutaUsdz) ? `models/${carpeta}/${p}/${p}.usdz` : undefined;
+    if (usdz) { const st = fs.statSync(rutaUsdz); huella.update(`${st.size}:${st.mtimeMs}`); }
+    const version = huella.digest('hex').slice(0, 10);
+    return { id, nombre: p, archivo: `models/${carpeta}/${p}/${p}.glb`, usdz, version };
   });
 
   campanas.push({ enlace, titulo: carpeta, carpeta, exposicion, modelos });

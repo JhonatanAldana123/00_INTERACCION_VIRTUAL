@@ -25,7 +25,8 @@
         "id": "shipper",
         "nombre": "SHIPPER",
         "archivo": "models/OLIZA/SHIPPER/SHIPPER.glb",
-        "version": "1834d6bbc5"
+        "usdz": "models/OLIZA/SHIPPER/SHIPPER.usdz",
+        "version": "98e17b3cb8"
       },
       {
         "id": "minishipper-mixto",
@@ -68,6 +69,18 @@
         "nombre": "Exhibidor_01",
         "archivo": "models/Sello Rojo/Exhibidor_01/Exhibidor_01.glb",
         "version": "7234d2aec7"
+      }
+    ]
+  },
+  "shipper-prueba": {
+    "titulo": "shipper_prueba",
+    "carpeta": "shipper_prueba",
+    "modelos": [
+      {
+        "id": "minishipper-ro",
+        "nombre": "MINISHIPPER RO",
+        "archivo": "models/shipper_prueba/MINISHIPPER RO/MINISHIPPER RO.glb",
+        "version": "1e96ff2066"
       }
     ]
   }

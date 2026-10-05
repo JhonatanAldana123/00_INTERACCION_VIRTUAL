@@ -19,7 +19,8 @@ namespace FlujoAR
     // Estructura de models\ (la carpeta manda):
     //   models\<Campaña>\<Pieza>\<Pieza>.glb
     // Cada carpeta raíz es una campaña. Con varias piezas, su QR es una colección; con una, muestra esa pieza.
-    class Ventana : Form
+    // El animador del paso 3 (pieza animada) está en Animador.cs.
+    partial class Ventana : Form
     {
         // Dirección del sitio publicado: se lee de sitio.json (un solo lugar para cambiarla)
         readonly string UrlBase = "https://innerciaar.com/";
@@ -37,7 +38,7 @@ namespace FlujoAR
 
         static readonly string[] Titulos =
         {
-            "Preparar en Rhino", "Exportar .glb", "Optimizar", "Revisar",
+            "Preparar en Rhino", "Exportar .glb", "Optimizar o animar", "Revisar",
             "Campañas", "Publicar", "Generar QR",
         };
 
@@ -134,6 +135,7 @@ namespace FlujoAR
             Controls.Add(nav);
 
             FormClosing += (s, e) => servidor.Detener();
+            servidor.AlGuardarAnimacion = RecibirAjusteVistaPrevia;
             IrA(0);
         }
 
@@ -144,6 +146,10 @@ namespace FlujoAR
             paso = i;
             registroVisible = null;
             refrescarOptimizar = null;
+            refrescarAnimador = null;
+            lblEstadoAnimVisible = null;
+            // El animador necesita más espacio: la ventana crece solo mientras se usa
+            AjustarTamano(i == 2 && modoAnimado);
 
             contenido.SuspendLayout();
             foreach (var c in contenido.Controls.Cast<Control>().ToList()) c.Dispose();
@@ -225,6 +231,12 @@ namespace FlujoAR
         // ── Paso 3: Optimizar ──────────────────────────────────────
         void PasoOptimizar(FlowLayoutPanel col)
         {
+            col.Controls.Add(SelectorModo());
+            if (modoAnimado)
+            {
+                PasoAnimar(col);
+                return;
+            }
             col.Controls.Add(Texto("Elige la pieza exportada y la campaña a la que pertenece. La pieza queda en models\\Campaña\\Pieza\\, con una copia del original de Rhino en _original\\."));
 
             var txtArchivo = new TextBox { Width = S(470), ReadOnly = true, Text = archivoEntrada, Margin = new Padding(0, S(2), S(8), 0) };

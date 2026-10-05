@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <title>Vista previa en vivo</title>
+  <!--
+    Vista previa en vivo del animador de Flujo AR (solo local: la abre el paso 3 con el servidor de Flujo AR).
+    Reproduce la receta (animacion.json) con la misma lógica que scripts/animador.py, sin pasar por Blender,
+    y se vuelve a armar sola cada vez que la receta cambia en la ventana.
+    Modo «Editar»: gumball para poner la bisagra (por 2 puntos, moverla o girar su eje), elegir el ángulo de
+    inicio, o mover el punto de partida de una pieza que entra. Se guarda en Flujo AR (POST /__animador/guardar).
+      ?p=<carpeta del proyecto relativa al sitio>   p. ej. ?p=001_ANIMACIÓN/01_Bandeja_Yogo
+  -->
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    :root {
+      --bg: #14161C;
+      --panel: rgba(16,19,26,0.88);
+      --fg: #E8EBF4;
+      --fg-dim: rgba(232,235,244,0.58);
+      --accent: #00C9B0;
+      --borde: rgba(232,235,244,0.16);
+      --rojo: #FF7A6B;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    canvas { display: block; }
+    body.apuntando canvas { cursor: crosshair; }
+    .arriba { position: fixed; top: 16px; left: 16px; display: flex; gap: 12px; pointer-events: none; }
+    .caja { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 10px 14px; }
+    .tag { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+    #paso { font-size: 18px; font-weight: 600; margin-top: 2px; }
+    #detalle { font-size: 12px; color: var(--fg-dim); margin-top: 2px; }
+    #vivo { font-size: 12px; color: var(--fg-dim); }
+    #vivo b { color: var(--accent); font-weight: 600; }
+    .abajo { position: fixed; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 12px; }
+    body.editando .abajo { right: 352px; }
+    button { font: inherit; font-size: 13px; font-weight: 600; color: var(--fg); background: var(--panel);
+      border: 1px solid var(--borde); border-radius: 100px; padding: 8px 16px; cursor: pointer; white-space: nowrap; }
+    button:hover { border-color: rgba(232,235,244,0.4); }
+    button.on, button.prim { background: var(--accent); color: #08090D; border-color: var(--accent); }
+    button.chico { font-size: 12px; padding: 6px 11px; }
+    input[type=range] { flex: 1; accent-color: var(--accent); min-width: 80px; }
+    #tiempo { font-size: 12px; color: var(--fg-dim); font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+    #cargando { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--fg-dim); text-align: center; padding: 24px; }
+    #btnEditar { position: fixed; top: 16px; right: 16px; }
+    /* Panel de edición (gumball) */
+    #editor { position: fixed; top: 64px; right: 16px; bottom: 16px; width: 320px; overflow-y: auto;
+      background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 14px 16px; }
+    #editor h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+    #editor h3 { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-dim); margin: 16px 0 8px; }
+    #editor select { width: 100%; font: inherit; font-size: 13px; color: var(--fg); background: #1E222B; border: 1px solid var(--borde); border-radius: 8px; padding: 7px 8px; }
+    #editor p { font-size: 12px; color: var(--fg-dim); line-height: 1.45; margin-top: 8px; }
+    #editor .fila { display: flex; flex-wrap: wrap; gap: 6px; }
+    #editor .angulo { display: flex; align-items: center; gap: 8px; }
+    #editor input[type=number] { width: 64px; font: inherit; font-size: 13px; color: var(--fg); background: #1E222B; border: 1px solid var(--borde); border-radius: 8px; padding: 5px 6px; text-align: right; }
+    #editor .tabs { margin-top: 10px; }
+    #listaGrupos { display: flex; flex-direction: column; gap: 4px; }
+    .grupoFila { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
+    .grupoFila:hover { background: rgba(232,235,244,0.06); }
+    .grupoFila.actual { background: rgba(0,201,176,0.14); }
+    .grupoFila .color { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+    .grupoFila .nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .grupoFila .nombre small { color: var(--fg-dim); }
+    .grupoFila button { padding: 2px 7px; font-size: 13px; border-radius: 6px; line-height: 1.3; }
+    .grupoFila button.apagado { opacity: 0.35; }
+    #infoPieza { font-size: 12px; margin-top: 10px; min-height: 16px; color: var(--fg); }
+    #recuadro { position: fixed; border: 1px dashed var(--accent); background: rgba(0,201,176,0.08); pointer-events: none; }
+    #recuadro.quitar { border-color: var(--rojo); background: rgba(255,122,107,0.08); }
+    #guardado { font-size: 12px; margin-top: 14px; min-height: 16px; color: var(--fg-dim); }
+    #guardado.aviso { color: #FFB454; }
+    #guardado.ok { color: var(--accent); }
+    #guardado.error { color: var(--rojo); }
+    kbd { font-family: inherit; font-size: 11px; border: 1px solid var(--borde); border-radius: 4px; padding: 0 4px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="arriba">
+    <div class="caja">
+      <div class="tag">Vista previa en vivo</div>
+      <div id="paso">—</div>
+      <div id="detalle"></div>
+    </div>
+    <div class="caja" id="vivo">Se actualiza sola al cambiar algo en Flujo AR<br><span id="actualizado"></span></div>
+  </div>
+  <button id="btnEditar" title="Gumball: poner bisagras, elegir el ángulo de inicio o de dónde llega cada pieza">✎  Editar movimiento</button>
+
+  <div id="editor" hidden>
+    <h2>Editar</h2>
+    <select id="selGrupo"></select>
+    <div class="fila tabs">
+      <button class="chico on" id="tabMov">Movimiento</button>
+      <button class="chico" id="tabPiezas">Piezas</button>
+    </div>
+
+    <div id="panelPiezas" hidden>
+      <p><b>Clic</b>: pone o quita la pieza del grupo · <kbd>Ctrl</kbd>+clic: solo quita · <kbd>Shift</kbd> + arrastrar: agrega las piezas <b>libres</b> del recuadro
+        (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>: también de otros grupos) · <kbd>Alt</kbd>+<kbd>Shift</kbd> + arrastrar: las quita.</p>
+      <h3>Ver y bloquear</h3>
+      <div id="listaGrupos"></div>
+      <div class="fila" style="margin-top:8px">
+        <button class="chico" id="btnAislar">Aislar este grupo</button>
+        <button class="chico" id="btnMostrar">Mostrar todo</button>
+      </div>
+      <p><kbd>H</kbd> con el mouse sobre una pieza: la oculta (como Ctrl+H en Rhino) · <kbd>Shift</kbd>+<kbd>H</kbd>: muestra todo.
+        Ocultar sirve para llegar a lo que está detrás (por ejemplo, ocultar el producto para tomar una bandeja).</p>
+      <div id="infoPieza"></div>
+    </div>
+
+    <div id="panelMov">
+    <div id="edGiro">
+      <h3>Bisagra (eje de giro)</h3>
+      <div class="fila">
+        <button class="chico" id="btn2Puntos" title="Haz clic en 2 puntos del doblez. Se pega al vértice más cercano (Alt: punto exacto)">Por 2 puntos</button>
+        <button class="chico" id="btnMover" title="Gumball: mover la bisagra (tecla W)">Mover <kbd>W</kbd></button>
+        <button class="chico" id="btnGirarEje" title="Gumball: girar el eje (tecla E)">Girar eje <kbd>E</kbd></button>
+      </div>
+      <h3>Dirección del eje</h3>
+      <div class="fila">
+        <button class="chico" data-eje="0,1,0">Vertical</button>
+        <button class="chico" data-eje="1,0,0">Izq – Der</button>
+        <button class="chico" data-eje="0,0,1">Frente – Atrás</button>
+      </div>
+      <h3>Dónde empieza</h3>
+      <div class="angulo">
+        <input type="range" id="rngAngulo" min="-180" max="180" step="1">
+        <input type="number" id="numAngulo" min="-720" max="720" step="1"><span>°</span>
+      </div>
+      <div class="fila" style="margin-top:8px">
+        <button class="chico" id="btnInvertir">Invertir sentido</button>
+      </div>
+      <p id="ayudaGiro">La pieza se muestra donde <b>empieza</b>. Mueve el ángulo hasta dejarla ahí (por ejemplo, casi tocando el espaldar); al animarse vuelve a su lugar.</p>
+    </div>
+
+    <div id="edEntrar">
+      <h3>Punto de partida</h3>
+      <div class="fila"><button class="chico on" id="btnMoverPartida">Mover <kbd>W</kbd></button></div>
+      <p>La pieza se muestra donde <b>empieza</b>. Arrastra las flechas del gumball para elegir desde dónde llega.</p>
+    </div>
+
+    <h3>Probar</h3>
+    <div class="fila">
+      <button class="chico prim" id="btnProbar">▶  Probar este paso</button>
+      <button class="chico" id="btnAuto">Volver a automático</button>
+    </div>
+    </div>
+    <div id="guardado"></div>
+  </div>
+
+  <div class="abajo">
+    <button id="play">Pausa</button>
+    <button id="solo" title="Repite solo el paso del grupo elegido en Flujo AR">Solo el grupo elegido</button>
+    <input type="range" id="barra" min="0" max="1000" value="0">
+    <span id="tiempo">0.0 s</span>
+  </div>
+  <div id="recuadro" hidden></div>
+  <div id="cargando">Cargando la pieza…</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    const $ = id => document.getElementById(id);
+    const proyecto = new URLSearchParams(location.search).get('p') || '';
+    const base = '/' + proyecto.split('/').filter(Boolean).map(encodeURIComponent).join('/') + '/';
+
+    // ── Escena ──
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    document.body.prepend(renderer.domElement);
+    const escena = new THREE.Scene();
+    escena.background = new THREE.Color(0x14161C);
+    escena.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    const camara = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 200);
+    const controles = new OrbitControls(camara, renderer.domElement);
+    controles.enableDamping = true;
+    addEventListener('resize', () => {
+      camara.aspect = innerWidth / innerHeight;
+      camara.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // Mismas direcciones que animador.py, pasadas de Blender (Z arriba, frente = -Y) a three.js (Y arriba, frente = +Z)
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const LADOS = { izquierda: V(-1, 0, 0), derecha: V(1, 0, 0), frente: V(0, 0, 1), atras: V(0, 0, -1) };
+    const DESDE = { arriba: V(0, 1, 0), abajo: V(0, -1, 0), ...LADOS };
+    const ARRIBA = V(0, 1, 0);
+    const MINIMA = 0.001;
+    const aThree = a => V(a[0], a[2], -a[1]);                     // Blender → three.js
+    const aBlender = v => [+v.x.toFixed(5), +(-v.z).toFixed(5), +v.y.toFixed(5)];   // three.js → Blender
+
+    let piezas = new Map();       // nombre de la pieza → objeto
+    const padreOriginal = new Map();
+    let mallas = [];              // para hacer clic sobre la pieza
+    let ejes = [];                // { i, g, eje, objs, ini, fin, reposo, giro, ang, desplaz, aparece }
+    let receta = null, pasos = [], total = 1, grupoElegido = -1;
+    let t = 0, reproduciendo = true, soloGrupo = false;
+    let marcaEje = null;
+
+    // ── Tiempos: igual que tiempos() de animador.py ──
+    function tiempos(r) {
+      const tIni = +(r.inicio ?? 1), pausa = +(r.pausa ?? 0.33);
+      const res = [], ps = [];
+      let finPaso = tIni;
+      r.grupos.forEach((g, i) => {
+        const dur = Math.max(0.1, +(g.duracion ?? 1)), ret = Math.max(0, +(g.retraso ?? 0));
+        let ini;
+        if (i === 0 || (g.empieza || 'despues') === 'despues') {
+          ini = (i === 0 ? tIni : finPaso + pausa) + ret;
+          ps.push({ nombre: g.nombre || `Paso ${ps.length + 1}`, inicio: ini, fin: ini + dur, grupos: [] });
+        } else ini = res[res.length - 1][0] + ret;
+        const fin = ini + dur;
+        ps[ps.length - 1].fin = Math.max(ps[ps.length - 1].fin, fin);
+        ps[ps.length - 1].grupos.push(i);
+        finPaso = ps[ps.length - 1].fin;
+        res.push([ini, fin]);
+      });
+      const tot = (res.length ? Math.max(...res.map(r => r[1])) : tIni) + +(r.final ?? 2);
+      return { res, ps, tot };
+    }
+
+    // ── Armar los ejes de la receta ──
+    function desarmar() {
+      // Primero todo en reposo (también los ejes encadenados), después se sueltan las piezas y se quitan los ejes
+      for (const e of ejes) { e.eje.position.copy(e.reposoLocal); e.eje.quaternion.identity(); e.eje.scale.setScalar(1); }
+      escena.updateMatrixWorld(true);
+      for (const e of ejes) for (const o of e.objs) padreOriginal.get(o).attach(o);
+      for (const e of ejes) e.eje.removeFromParent();
+      ejes = [];
+    }
+
+    // Bisagra y eje automáticos (o los del gumball) de un grupo, como en animador.py
+    function giroDe(g, caja) {
+      const c = caja.getCenter(V(0, 0, 0));
+      if (g.pivote && g.eje) return { pos: aThree(g.pivote), eje: aThree(g.eje).normalize() };
+      if ((g.tipo || 'entrar') === 'girar') return { pos: V(c.x, caja.min.y, c.z), eje: ARRIBA.clone() };
+      const d = LADOS[g.lado] || LADOS.izquierda;
+      return {
+        pos: V(d.x < 0 ? caja.min.x : d.x > 0 ? caja.max.x : c.x,
+               g.borde === 'arriba' ? caja.max.y : caja.min.y,
+               d.z < 0 ? caja.min.z : d.z > 0 ? caja.max.z : c.z),
+        eje: ARRIBA.clone().cross(d).normalize(),
+      };
+    }
+
+    function armar(r) {
+      desarmar();
+      receta = r;
+      const { res, ps, tot } = tiempos(r);
+      pasos = ps; total = tot;
+      const usados = new Set();
+      r.grupos.forEach((g, i) => {
+        const nombres = (g.piezas || []).filter(n => piezas.has(n) && !usados.has(n));
+        nombres.forEach(n => usados.add(n));
+        const objs = nombres.map(n => piezas.get(n));
+        if (!objs.length) return;
+        const caja = new THREE.Box3();
+        objs.forEach(o => caja.expandByObject(o));
+        const c = caja.getCenter(V(0, 0, 0));
+        const tipo = g.tipo || 'entrar';
+        let pos, giro = null, ang = 0, desplaz = null;
+        if (tipo === 'bisagra' || tipo === 'girar') {
+          ({ pos, eje: giro } = giroDe(g, caja));
+          ang = THREE.MathUtils.degToRad(+(g.angulo ?? 90));
+        } else {
+          pos = V(c.x, caja.min.y, c.z);
+          desplaz = g.desplazamiento ? aThree(g.desplazamiento)
+            : (DESDE[g.desde] || DESDE.arriba).clone().multiplyScalar(+(g.distancia ?? 30) / 100);
+        }
+        const nodo = new THREE.Object3D();
+        nodo.position.copy(pos);
+        escena.add(nodo);
+        nodo.updateMatrixWorld(true);
+        objs.forEach(o => nodo.attach(o));
+        ejes.push({ i, g, eje: nodo, objs, caja, ini: res[i][0], fin: res[i][1], reposo: pos.clone(), reposoLocal: pos.clone(), giro, ang, desplaz,
+                    aparece: tipo === 'entrar' && g.aparece !== false && res[i][0] > 0 });
+      });
+      // «Se mueve con»: el eje cuelga del eje del padre (todo está en reposo, así que no se mueve nada al colgarlo)
+      const porId = new Map(ejes.filter(e => e.g.id).map(e => [e.g.id, e]));
+      for (const e of ejes) {
+        let p = porId.get(e.g.padre), visto = new Set([e]), circulo = false;
+        for (let x = p; x; x = porId.get(x.g.padre)) { if (visto.has(x)) { circulo = true; break; } visto.add(x); }
+        if (p && !circulo) p.eje.attach(e.eje);
+      }
+      for (const e of ejes) e.reposoLocal = e.eje.position.clone();
+      $('detalle').textContent = `${r.grupos.length} grupos · ${pasos.length} pasos · ${total.toFixed(1)} s`;
+      $('actualizado').innerHTML = `<b>Actualizada</b> ${new Date().toLocaleTimeString()}`;
+      llenarGrupos();
+      marcarElegido();
+      pintar();
+    }
+
+    // Línea de la bisagra (o eje de giro) del grupo elegido
+    function marcarElegido() {
+      if (marcaEje) { escena.remove(marcaEje); marcaEje = null; }
+      const e = ejes.find(x => x.i === grupoActivo());
+      if (!e || !e.giro) return;
+      const largo = Math.max(0.3, e.caja.getSize(V(0, 0, 0)).length() * 1.3);
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        e.reposo.clone().addScaledVector(e.giro, -largo / 2), e.reposo.clone().addScaledVector(e.giro, largo / 2)]);
+      marcaEje = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x00C9B0, depthTest: false }));
+      marcaEje.renderOrder = 10;
+      escena.add(marcaEje);
+    }
+
+    const suave = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);   // como las curvas por defecto de Blender
+
+    // k: 0 = donde empieza el movimiento, 1 = en su lugar
+    function poner(e, k, mostrar) {
+      e.eje.position.copy(e.reposoLocal);   // relativa al padre si el grupo se mueve con otro
+      e.eje.quaternion.identity();
+      if (e.giro) e.eje.quaternion.setFromAxisAngle(e.giro, e.ang * (1 - k));
+      if (e.desplaz) e.eje.position.addScaledVector(e.desplaz, 1 - k);
+      e.eje.scale.setScalar(!mostrar && e.aparece && k <= 0 ? MINIMA : 1);
+    }
+
+    function posar(tt) {
+      for (const e of ejes) poner(e, tt < e.ini ? 0 : suave((tt - e.ini) / (e.fin - e.ini)), false);
+      const p = pasos.filter(p => tt >= p.inicio).pop();
+      $('paso').textContent = !pasos.length ? 'Sin grupos todavía' : !p ? 'Inicio'
+        : tt > Math.max(...pasos.map(x => x.fin)) ? 'Lista para exhibir' : `Paso ${pasos.indexOf(p) + 1} · ${p.nombre}`;
+      $('tiempo').textContent = `${tt.toFixed(1)} s / ${total.toFixed(1)} s`;
+    }
+
+    // Editando: todo armado, y el grupo que se edita en su posición de inicio (o armado, mientras se marcan puntos)
+    function posarEdicion() {
+      const ed = ejes.find(e => e.i === grupoEdit);
+      for (const e of ejes) poner(e, e === ed && modo !== 'puntos' && pestana === 'mov' ? 0 : 1, true);
+      $('paso').textContent = ed ? `Editando · ${ed.g.nombre}` : 'Editando';
+      $('tiempo').textContent = 'inicio del movimiento';
+    }
+
+    function rango() {
+      if (soloGrupo) {
+        const p = pasos.find(p => p.grupos.includes(grupoActivo()));
+        if (p) return [Math.max(0, p.inicio - 0.4), p.fin + 0.6];
+      }
+      return [0, total];
+    }
+
+    // ── Reproducción ──
+    let antes = performance.now();
+    renderer.setAnimationLoop(ahora => {
+      const dt = Math.min(0.1, (ahora - antes) / 1000);
+      antes = ahora;
+      if (editando && !probando) posarEdicion();
+      else {
+        const [a, b] = rango();
+        if (reproduciendo) { t += dt; if (t > b || t < a) { t = a; if (probando) terminarPrueba(); } }
+        posar(t);
+        $('barra').value = Math.round(1000 * (t - a) / Math.max(0.01, b - a));
+      }
+      controles.update();
+      renderer.render(escena, camara);
+    });
+    $('play').onclick = () => { reproduciendo = !reproduciendo; $('play').textContent = reproduciendo ? 'Pausa' : 'Seguir'; };
+    $('solo').onclick = () => { soloGrupo = !soloGrupo; $('solo').classList.toggle('on', soloGrupo); t = rango()[0]; };
+    $('barra').oninput = () => {
+      const [a, b] = rango();
+      t = a + (b - a) * $('barra').value / 1000;
+      reproduciendo = false;
+      $('play').textContent = 'Seguir';
+    };
+
+    // ══ Edición con gumball ══════════════════════════════════════
+    let editando = false, probando = false, grupoEdit = -1, grupoLocal = false;
+    let modo = '';                 // '' | 'puntos'
+    let puntos = [];
+    const marcas = new THREE.Group();
+    escena.add(marcas);
+    const grupoActivo = () => editando ? grupoEdit : grupoElegido;
+
+    const gumball = new TransformControls(camara, renderer.domElement);
+    gumball.setSize(0.9);
+    escena.add(gumball.getHelper());
+    const manija = new THREE.Object3D();     // bisagra: posición = pivote, su eje Y = eje de giro
+    const partida = new THREE.Object3D();    // entrar: dónde empieza el eje del grupo
+    escena.add(manija, partida);
+    gumball.addEventListener('dragging-changed', ev => {
+      controles.enabled = !ev.value;
+      arrastrando = ev.value;
+      if (!ev.value) guardarPronto();
+    });
+    let arrastrando = false;
+    gumball.addEventListener('objectChange', () => {
+      const e = ejeEdit();
+      if (!e) return;
+      if (gumball.object === manija) {
+        e.g.pivote = aBlender(manija.position);
+        e.g.eje = aBlender(ARRIBA.clone().applyQuaternion(manija.quaternion));
+      } else if (gumball.object === partida) {
+        e.g.desplazamiento = aBlender(partida.position.clone().sub(e.reposo));
+      }
+      rearmar();
+    });
+
+    const ejeEdit = () => ejes.find(e => e.i === grupoEdit);
+
+    // Vuelve a armar con la receta en memoria, manteniendo el gumball donde estaba
+    function rearmar() {
+      armar(receta);
+      ubicarGumball(false);
+    }
+
+    function ubicarGumball(reiniciar = true) {
+      if (pestana === 'piezas') { gumball.detach(); pintar(); return; }   // en «Piezas» no hay gumball
+      const e = ejeEdit();
+      const giro = e && e.giro, entrar = e && e.desplaz;
+      $('edGiro').hidden = !giro;
+      $('edEntrar').hidden = !entrar;
+      if (!e) { gumball.detach(); return; }
+      if (giro) {
+        if (reiniciar) {
+          manija.position.copy(e.reposo);
+          manija.quaternion.setFromUnitVectors(ARRIBA, e.giro);
+        }
+        if (gumball.object !== manija) { gumball.attach(manija); gumball.setMode('translate'); }
+        const grados = Math.round(THREE.MathUtils.radToDeg(e.ang));
+        $('numAngulo').value = grados;
+        $('rngAngulo').value = Math.max(-180, Math.min(180, grados));
+      } else {
+        if (reiniciar || !arrastrando) partida.position.copy(e.reposo).add(e.desplaz);
+        if (gumball.object !== partida) { gumball.attach(partida); gumball.setMode('translate'); }
+      }
+      gumball.showX = gumball.showY = gumball.showZ = true;
+      $('btnMover').classList.toggle('on', gumball.mode === 'translate');
+      $('btnGirarEje').classList.toggle('on', gumball.mode === 'rotate');
+      marcarElegido();
+    }
+
+    function llenarGrupos() {
+      const sel = $('selGrupo');
+      const opciones = receta.grupos.map((g, i) => `${i + 1}. ${g.nombre} · ${g.tipo === 'entrar' ? 'entra' : g.tipo === 'girar' ? 'gira' : 'bisagra'}`);
+      if ([...sel.options].map(o => o.text).join('|') !== opciones.join('|'))
+        sel.innerHTML = opciones.map((o, i) => `<option value="${i}">${o.replace(/</g, '&lt;')}</option>`).join('');
+      if (grupoEdit >= 0) sel.value = grupoEdit;
+    }
+
+    function elegirGrupo(i, local) {
+      grupoEdit = i;
+      grupoLocal = local;
+      modo = '';
+      puntos = [];
+      marcas.clear();
+      document.body.classList.remove('apuntando');
+      $('btn2Puntos').classList.remove('on');
+      $('selGrupo').value = i;
+      ubicarGumball(true);
+    }
+
+    $('btnEditar').onclick = () => {
+      editando = !editando;
+      document.body.classList.toggle('editando', editando);
+      $('btnEditar').classList.toggle('on', editando);
+      $('editor').hidden = !editando;
+      if (editando) elegirGrupo(grupoElegido >= 0 && grupoElegido < receta.grupos.length ? grupoElegido : 0, false);
+      else { gumball.detach(); marcas.clear(); modo = ''; document.body.classList.remove('apuntando'); terminarPrueba(); encima = null; pintar(); }
+    };
+    $('selGrupo').onchange = () => elegirGrupo(+$('selGrupo').value, true);
+
+    $('btnMover').onclick = () => { if (gumball.object === manija) gumball.setMode('translate'); ubicarGumball(false); };
+    $('btnGirarEje').onclick = () => { if (gumball.object === manija) gumball.setMode('rotate'); ubicarGumball(false); };
+    addEventListener('keydown', ev => {
+      if (!editando || ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') return;
+      if (ev.key === 'w' || ev.key === 'W') $('btnMover').click();
+      if ((ev.key === 'e' || ev.key === 'E') && gumball.object === manija) $('btnGirarEje').click();
+      if (ev.key === 'Escape' && modo === 'puntos') cancelarPuntos();
+    });
+
+    document.querySelectorAll('[data-eje]').forEach(b => b.onclick = () => {
+      const e = ejeEdit();
+      if (!e || !e.giro) return;
+      const eje = V(...b.dataset.eje.split(',').map(Number));
+      if (eje.dot(e.giro) < 0) eje.negate();   // conserva el sentido del giro
+      e.g.pivote = aBlender(e.reposo);
+      e.g.eje = aBlender(eje);
+      rearmar();
+      ubicarGumball(true);
+      guardarPronto();
+    });
+
+    function fijarAngulo(grados) {
+      const e = ejeEdit();
+      if (!e || !e.giro || !Number.isFinite(grados)) return;
+      e.g.angulo = grados;
+      rearmar();
+      guardarPronto(true);
+    }
+    $('rngAngulo').oninput = () => fijarAngulo(+$('rngAngulo').value);
+    $('numAngulo').onchange = () => fijarAngulo(+$('numAngulo').value);
+    $('btnInvertir').onclick = () => { const e = ejeEdit(); if (e) fijarAngulo(-(+(e.g.angulo ?? 90))); };
+
+    // ── Bisagra por 2 puntos ──
+    function cancelarPuntos() {
+      modo = ''; puntos = []; marcas.clear();
+      document.body.classList.remove('apuntando');
+      $('btn2Puntos').classList.remove('on');
+      ubicarGumball(true);
+      avisar('');
+    }
+    $('btn2Puntos').onclick = () => {
+      if (modo === 'puntos') return cancelarPuntos();
+      modo = 'puntos'; puntos = []; marcas.clear();
+      gumball.detach();
+      document.body.classList.add('apuntando');
+      $('btn2Puntos').classList.add('on');
+      avisar('Haz clic en el 1.er punto del doblez (Esc para cancelar).');
+    };
+    const rayo = new THREE.Raycaster();
+    let abajo = null;
+    renderer.domElement.addEventListener('pointerdown', ev => { abajo = { x: ev.clientX, y: ev.clientY }; });
+    renderer.domElement.addEventListener('pointerup', ev => {
+      if (modo !== 'puntos' || !abajo || Math.hypot(ev.clientX - abajo.x, ev.clientY - abajo.y) > 5) return;
+      rayo.setFromCamera(V((ev.clientX / innerWidth) * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1, 0), camara);
+      const hit = rayo.intersectObjects(mallas, false)[0];
+      if (!hit) return;
+      let p = hit.point.clone();
+      if (!ev.altKey && hit.face) {
+        // Se pega al vértice más cercano del triángulo (como el Osnap «Fin» de Rhino)
+        const pos = hit.object.geometry.attributes.position;
+        let mejor = Infinity;
+        for (const k of [hit.face.a, hit.face.b, hit.face.c]) {
+          const v = V(pos.getX(k), pos.getY(k), pos.getZ(k)).applyMatrix4(hit.object.matrixWorld);
+          const d = v.distanceTo(hit.point);
+          if (d < mejor) { mejor = d; p = v; }
+        }
+      }
+      puntos.push(p);
+      const bola = new THREE.Mesh(new THREE.SphereGeometry(0.006, 16, 12), new THREE.MeshBasicMaterial({ color: 0x00C9B0, depthTest: false }));
+      bola.position.copy(p); bola.renderOrder = 11;
+      marcas.add(bola);
+      if (puntos.length === 1) { avisar('Ahora el 2.º punto del doblez.'); return; }
+      const e = ejeEdit();
+      const dir = puntos[1].clone().sub(puntos[0]);
+      if (!e || dir.length() < 1e-4) { avisar('Los puntos deben ser distintos.', true); puntos.pop(); marcas.remove(bola); return; }
+      e.g.pivote = aBlender(puntos[0]);
+      e.g.eje = aBlender(dir.normalize());
+      cancelarPuntos();
+      rearmar();
+      ubicarGumball(true);
+      guardarPronto();
+    });
+
+    // ── Probar el paso ──
+    $('btnProbar').onclick = () => {
+      if (probando) return terminarPrueba();
+      probando = true;
+      soloGrupo = true; $('solo').classList.add('on');
+      gumball.detach();
+      t = rango()[0]; reproduciendo = true; $('play').textContent = 'Pausa';
+      $('btnProbar').textContent = '■  Volver a editar';
+    };
+    function terminarPrueba() {
+      if (!probando) return;
+      probando = false;
+      $('btnProbar').textContent = '▶  Probar este paso';
+      if (editando) ubicarGumball(false);
+    }
+
+    $('btnAuto').onclick = async () => {
+      const e = ejeEdit();
+      if (!e) return;
+      if (e.giro) { delete e.g.pivote; delete e.g.eje; } else delete e.g.desplazamiento;
+      rearmar(); ubicarGumball(true);
+      await enviar({ automatico: true });
+    };
+
+    // ── Guardar en Flujo AR ──
+    let temporizador = null, pendiente = false;
+    function guardarPronto(conAngulo) {
+      pendiente = true;
+      clearTimeout(temporizador);
+      temporizador = setTimeout(() => {
+        const e = ejeEdit();
+        if (!e) return;
+        const datos = {};
+        if (e.giro) {
+          if (e.g.pivote && e.g.eje) { datos.pivote = e.g.pivote; datos.eje = e.g.eje; }
+          datos.angulo = +(e.g.angulo ?? 90);
+        } else if (e.g.desplazamiento) datos.desplazamiento = e.g.desplazamiento;
+        enviar(datos);
+      }, conAngulo ? 350 : 150);
+    }
+
+    async function enviar(datos, grupo = grupoEdit) {
+      try {
+        const r = await fetch('/__animador/guardar', { method: 'POST', body: JSON.stringify({ p: proyecto, grupo, ...datos }) });
+        const txt = await r.text();
+        if (r.status === 400) { avisar(txt, false, false, true); return; }   // Flujo AR guardó, con un aviso
+        if (!r.ok) throw new Error(r.status === 501 ? 'Abre la vista previa desde Flujo AR para poder guardar.' : txt);
+        avisar('✓ Guardado en Flujo AR · ' + new Date().toLocaleTimeString(), false, true);
+      } catch (err) {
+        avisar('No se guardó: ' + err.message, true);
+      } finally { pendiente = false; }
+    }
+
+    function avisar(texto, error, ok, aviso) {
+      const g = $('guardado');
+      g.textContent = texto;
+      g.className = error ? 'error' : ok ? 'ok' : aviso ? 'aviso' : '';
+    }
+
+    // ══ Pestaña «Piezas»: elegir, ocultar y bloquear en 3D ═══════════
+    const COLORES = [0x00C9B0, 0xFF8C28, 0x786EFF, 0xF04678, 0x3CAAFF, 0xFAD228, 0x96DC46, 0xC85AE6];   // los de Flujo AR
+    let pestana = 'mov';
+    const ocultas = new Set();          // piezas ocultas (solo en esta vista)
+    let encima = null;                  // pieza bajo el mouse
+
+    function grupoDe(nombre) {
+      if (!receta) return -1;
+      return receta.grupos.findIndex(g => (g.piezas || []).includes(nombre));
+    }
+
+    // Tiñe cada pieza con el color de su grupo (más fuerte el grupo elegido) y aplica lo oculto
+    function pintar() {
+      const enPiezas = editando && pestana === 'piezas';
+      for (const [n, obj] of piezas) {
+        obj.visible = !(enPiezas && ocultas.has(n));
+        const gi = enPiezas ? grupoDe(n) : -1;
+        const g = gi >= 0 ? receta.grupos[gi] : null;
+        obj.traverse(m => {
+          if (!m.isMesh) return;
+          for (const mat of [].concat(m.material)) {
+            if (!mat.emissive) continue;
+            if (!mat.userData.base) mat.userData.base = { c: mat.emissive.clone(), i: mat.emissiveIntensity };
+            if (enPiezas && n === encima) { mat.emissive.setHex(0xffffff); mat.emissiveIntensity = 0.35; }
+            else if (g) { mat.emissive.setHex(COLORES[gi % COLORES.length]); mat.emissiveIntensity = gi === grupoEdit ? 0.75 : g.bloqueado ? 0.18 : 0.35; }
+            else { mat.emissive.copy(mat.userData.base.c); mat.emissiveIntensity = mat.userData.base.i; }
+          }
+        });
+      }
+      if (enPiezas) listaGrupos();
+    }
+
+    function listaGrupos() {
+      const cont = $('listaGrupos');
+      const filas = receta.grupos.map((g, i) => {
+        const n = (g.piezas || []).length;
+        const visible = (g.piezas || []).some(p => !ocultas.has(p)) || !n;
+        return `<div class="grupoFila${i === grupoEdit ? ' actual' : ''}" data-i="${i}">
+          <span class="color" style="background:#${COLORES[i % COLORES.length].toString(16).padStart(6, '0')}"></span>
+          <span class="nombre">${i + 1}. ${(g.nombre || '').replace(/</g, '&lt;')} <small>${n}</small></span>
+          <button data-ver="${i}" class="${visible ? '' : 'apagado'}" title="Mostrar u ocultar">👁</button>
+          <button data-bloq="${i}" class="${g.bloqueado ? 'on' : 'apagado'}" title="Bloquear: sus piezas no se pueden quitar ni tomar">🔒</button>
+        </div>`;
+      });
+      const libres = [...piezas.keys()].filter(p => grupoDe(p) < 0);
+      const libresVisibles = libres.some(p => !ocultas.has(p));
+      filas.push(`<div class="grupoFila" data-i="-1"><span class="color" style="background:#5c6270"></span>
+        <span class="nombre">Sin grupo (fijas) <small>${libres.length}</small></span>
+        <button data-ver="-1" class="${libresVisibles ? '' : 'apagado'}" title="Mostrar u ocultar">👁</button></div>`);
+      const html = filas.join('');
+      if (cont.dataset.html !== html) { cont.innerHTML = html; cont.dataset.html = html; }
+    }
+
+    $('listaGrupos').onclick = ev => {
+      const ver = ev.target.closest('[data-ver]'), bloq = ev.target.closest('[data-bloq]'), fila = ev.target.closest('.grupoFila');
+      if (ver) {
+        const i = +ver.dataset.ver;
+        const lista = i >= 0 ? (receta.grupos[i].piezas || []) : [...piezas.keys()].filter(p => grupoDe(p) < 0);
+        const ocultar = lista.some(p => !ocultas.has(p));
+        lista.forEach(p => ocultar ? ocultas.add(p) : ocultas.delete(p));
+        pintar();
+      } else if (bloq) {
+        const i = +bloq.dataset.bloq;
+        receta.grupos[i].bloqueado = !receta.grupos[i].bloqueado;
+        pintar();
+        enviar({ bloqueado: receta.grupos[i].bloqueado }, i);
+      } else if (fila && +fila.dataset.i >= 0) elegirGrupo(+fila.dataset.i, true);
+    };
+    $('btnAislar').onclick = () => {
+      const propias = new Set(receta.grupos[grupoEdit]?.piezas || []);
+      for (const p of piezas.keys()) propias.has(p) ? ocultas.delete(p) : ocultas.add(p);
+      pintar();
+    };
+    $('btnMostrar').onclick = () => { ocultas.clear(); pintar(); };
+
+    function cambiarPestana(p) {
+      pestana = p;
+      $('tabMov').classList.toggle('on', p === 'mov');
+      $('tabPiezas').classList.toggle('on', p === 'piezas');
+      $('panelMov').hidden = p !== 'mov';
+      $('panelPiezas').hidden = p !== 'piezas';
+      if (modo === 'puntos') cancelarPuntos();
+      if (p === 'piezas') { gumball.detach(); if (marcaEje) marcaEje.visible = false; }
+      else { ubicarGumball(true); }
+      encima = null;
+      pintar();
+    }
+    $('tabMov').onclick = () => cambiarPestana('mov');
+    $('tabPiezas').onclick = () => cambiarPestana('piezas');
+
+    // Pieza visible bajo el mouse
+    function piezaEn(x, y) {
+      rayo.setFromCamera(V((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1, 0), camara);
+      for (const hit of rayo.intersectObjects(mallas, false)) {
+        let o = hit.object, visible = true;
+        while (o) { if (!o.visible) { visible = false; break; } o = o.parent; }
+        if (visible) return hit.object.userData.pieza;
+      }
+      return null;
+    }
+
+    // Cambio local inmediato (Flujo AR confirma y suma las piezas que se incluyen solas)
+    function cambiarLocal(i, nombres, agregar, soloLibres) {
+      const g = receta.grupos[i];
+      if (g.bloqueado) { avisar(`«${g.nombre}» está bloqueado 🔒: desbloquéalo para cambiar sus piezas.`, false, false, true); return []; }
+      const hechos = [];
+      for (const n of nombres) {
+        const dueno = grupoDe(n);
+        if (agregar) {
+          if (dueno === i) continue;
+          if (dueno >= 0 && (receta.grupos[dueno].bloqueado || soloLibres)) continue;
+          if (dueno >= 0) receta.grupos[dueno].piezas = receta.grupos[dueno].piezas.filter(p => p !== n);
+          (g.piezas = g.piezas || []).push(n);
+        } else {
+          if (dueno !== i) continue;
+          g.piezas = g.piezas.filter(p => p !== n);
+        }
+        hechos.push(n);
+      }
+      if (hechos.length) { armar(receta); pintar(); }
+      return hechos;
+    }
+
+    let arrastreSel = null;
+    addEventListener('pointerdown', ev => {
+      if (!(editando && pestana === 'piezas') || ev.target !== renderer.domElement) return;
+      if (ev.shiftKey) {
+        controles.enabled = false;   // antes de que OrbitControls empiece a girar
+        arrastreSel = { x: ev.clientX, y: ev.clientY, quitar: ev.altKey, todas: ev.ctrlKey };
+        $('recuadro').classList.toggle('quitar', ev.altKey);
+      }
+    }, { capture: true });
+    addEventListener('pointermove', ev => {
+      if (arrastreSel) {
+        const r = $('recuadro');
+        r.hidden = false;
+        Object.assign(r.style, {
+          left: Math.min(ev.clientX, arrastreSel.x) + 'px', top: Math.min(ev.clientY, arrastreSel.y) + 'px',
+          width: Math.abs(ev.clientX - arrastreSel.x) + 'px', height: Math.abs(ev.clientY - arrastreSel.y) + 'px',
+        });
+        return;
+      }
+      if (!(editando && pestana === 'piezas') || ev.target !== renderer.domElement) return;
+      const n = piezaEn(ev.clientX, ev.clientY);
+      if (n !== encima) {
+        encima = n;
+        pintar();
+        const gi = n ? grupoDe(n) : -1;
+        $('infoPieza').textContent = !n ? '' : `${n} · ${gi >= 0 ? `grupo «${receta.grupos[gi].nombre}»${receta.grupos[gi].bloqueado ? ' 🔒' : ''}` : 'sin grupo (fija)'}`;
+      }
+    });
+    addEventListener('pointerup', ev => {
+      if (arrastreSel) {
+        const a = arrastreSel;
+        arrastreSel = null;
+        $('recuadro').hidden = true;
+        controles.enabled = true;
+        const x0 = Math.min(a.x, ev.clientX), x1 = Math.max(a.x, ev.clientX), y0 = Math.min(a.y, ev.clientY), y1 = Math.max(a.y, ev.clientY);
+        if (x1 - x0 < 4 || y1 - y0 < 4) return;
+        // Piezas visibles cuyo centro cae dentro del recuadro
+        const dentro = [];
+        for (const [n, obj] of piezas) {
+          if (ocultas.has(n)) continue;
+          const c = new THREE.Box3().setFromObject(obj).getCenter(V(0, 0, 0)).project(camara);
+          const sx = (c.x + 1) / 2 * innerWidth, sy = (1 - c.y) / 2 * innerHeight;
+          if (c.z < 1 && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) dentro.push(n);
+        }
+        const hechos = cambiarLocal(grupoEdit, dentro, !a.quitar, !a.todas);
+        if (hechos.length) enviar(a.quitar ? { quitar: hechos } : { agregar: hechos, solo_libres: !a.todas });
+        else if (dentro.length && !a.quitar) avisar('Las piezas del recuadro ya tienen grupo. Ctrl+Shift+arrastrar para tomarlas también.', false, false, true);
+        return;
+      }
+      if (!(editando && pestana === 'piezas') || ev.target !== renderer.domElement || !abajo) return;
+      if (Math.hypot(ev.clientX - abajo.x, ev.clientY - abajo.y) > 5) return;   // fue un giro de cámara
+      const n = piezaEn(ev.clientX, ev.clientY);
+      if (!n) return;
+      const dueno = grupoDe(n);
+      if (dueno >= 0 && dueno !== grupoEdit && receta.grupos[dueno].bloqueado) {
+        avisar(`${n} es de «${receta.grupos[dueno].nombre}», que está bloqueado 🔒.`, false, false, true);
+        return;
+      }
+      // Como en Rhino: Ctrl+clic solo quita; clic alterna
+      if (ev.ctrlKey && dueno !== grupoEdit) { avisar(`${n} no está en este grupo: no hay nada que quitar.`); return; }
+      const quitar = dueno === grupoEdit;
+      const hechos = cambiarLocal(grupoEdit, [n], !quitar, false);
+      if (hechos.length) enviar(quitar ? { quitar: hechos } : { agregar: hechos });
+    });
+    addEventListener('keydown', ev => {
+      if (!(editando && pestana === 'piezas') || ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') return;
+      if ((ev.key === 'h' || ev.key === 'H') && ev.shiftKey) { ocultas.clear(); pintar(); }
+      else if ((ev.key === 'h' || ev.key === 'H') && encima) { ocultas.add(encima); encima = null; pintar(); }
+    });
+
+    // ── Carga y actualización en vivo ──
+    let ultimaReceta = '', ultimaSel = '';
+    async function revisar() {
+      if (arrastrando || pendiente) return;   // no pisar lo que se está ajustando con el gumball
+      try {
+        const txt = await (await fetch(base + 'animacion.json', { cache: 'no-store' })).text();
+        if (txt !== ultimaReceta) {
+          ultimaReceta = txt;
+          armar(JSON.parse(txt));
+          if (editando) ubicarGumball(modo !== 'puntos');
+        }
+      } catch (e) { /* la ventana puede estar escribiendo el archivo: se reintenta */ }
+      try {
+        const r = await fetch(base + '_animador/seleccion.json', { cache: 'no-store' });
+        if (r.ok) {
+          const txt = await r.text();
+          if (txt !== ultimaSel) {
+            ultimaSel = txt;
+            grupoElegido = JSON.parse(txt).grupo;
+            if (editando && grupoElegido >= 0 && grupoElegido !== grupoEdit) elegirGrupo(grupoElegido, false);
+            marcarElegido();
+            if (soloGrupo) t = rango()[0];
+          }
+        }
+      } catch (e) { }
+    }
+
+    try {
+      const gltf = await new GLTFLoader().loadAsync(base + '_animador/vista.glb');
+      const modelo = gltf.scene;
+      // Centrado y apoyado en el piso, como en animador.py
+      const caja = new THREE.Box3().setFromObject(modelo);
+      const c = caja.getCenter(V(0, 0, 0));
+      modelo.position.set(-c.x, -caja.min.y, -c.z);
+      escena.add(modelo);
+      modelo.updateMatrixWorld(true);
+      // Nombres originales de los nodos (three.js cambia espacios y puntos en object.name)
+      gltf.parser.associations.forEach((v, obj) => {
+        if (obj && obj.isObject3D && v && v.nodes !== undefined) {
+          const n = gltf.parser.json.nodes[v.nodes].name;
+          if (n && !piezas.has(n)) piezas.set(n, obj);
+        }
+      });
+      for (const o of piezas.values()) padreOriginal.set(o, o.parent);
+      // Cada malla sabe a qué pieza pertenece, y tiene su propio material para poder teñirla sola
+      for (const [n, obj] of piezas) obj.traverse(m => {
+        if (!m.isMesh) return;
+        m.userData.pieza = n;
+        m.material = Array.isArray(m.material) ? m.material.map(x => x.clone()) : m.material.clone();
+      });
+      modelo.traverse(o => { if (o.isMesh) mallas.push(o); });
+      // Cámara de frente ¾, con lugar para lo que está desarmado
+      const tam = caja.getSize(V(0, 0, 0)).length();
+      controles.target.set(0, (caja.max.y - caja.min.y) * 0.55, 0);
+      camara.position.set(-tam * 1.25, tam * 1.15, tam * 1.85);
+      escena.add(new THREE.GridHelper(tam * 3, 30, 0x2c3140, 0x22262f));
+      $('cargando').hidden = true;
+      await revisar();
+      setInterval(revisar, 500);
+    } catch (e) {
+      $('cargando').textContent = 'No se pudo cargar la pieza (' + e.message + '). En Flujo AR, pulsa «Analizar pieza» y vuelve a abrir la vista previa.';
+    }
+  </script>
+</body>
+</html>

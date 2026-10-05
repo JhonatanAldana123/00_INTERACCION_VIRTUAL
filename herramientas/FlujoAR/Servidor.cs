@@ -30,6 +30,10 @@ namespace FlujoAR
         string url;
         public string Error { get; private set; }
 
+        // POST /__animador/guardar: la vista previa en vivo envía los ajustes hechos con el gumball.
+        // Recibe el cuerpo (JSON) y devuelve null si salió bien o el mensaje de error.
+        public Func<string, string> AlGuardarAnimacion;
+
         // Devuelve la URL base (http://localhost:PUERTO/) o null si no pudo iniciar
         public string Iniciar(string carpeta)
         {
@@ -77,6 +81,23 @@ namespace FlujoAR
             try
             {
                 string relativa = Uri.UnescapeDataString(ctx.Request.Url.AbsolutePath).TrimStart('/');
+
+                if (ctx.Request.HttpMethod == "POST")
+                {
+                    string error = "No disponible";
+                    if (relativa == "__animador/guardar" && AlGuardarAnimacion != null)
+                    {
+                        string cuerpo;
+                        using (var r = new StreamReader(ctx.Request.InputStream, System.Text.Encoding.UTF8)) cuerpo = r.ReadToEnd();
+                        error = AlGuardarAnimacion(cuerpo);
+                    }
+                    ctx.Response.StatusCode = error == null ? 200 : 400;
+                    byte[] respuesta = System.Text.Encoding.UTF8.GetBytes(error ?? "ok");
+                    ctx.Response.ContentType = "text/plain; charset=utf-8";
+                    ctx.Response.OutputStream.Write(respuesta, 0, respuesta.Length);
+                    return;
+                }
+
                 string ruta = Path.GetFullPath(Path.Combine(raiz, relativa.Replace('/', '\\')));
 
                 // Carpetas (direcciones limpias como /alpina/): se sirve su index.html

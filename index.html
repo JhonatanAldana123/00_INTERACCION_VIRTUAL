@@ -292,6 +292,7 @@
     ar-modes="scene-viewer webxr quick-look"
     ar-usdz-max-texture-size="1024"
     camera-controls
+    autoplay
     auto-rotate
     auto-rotate-delay="1500"
     rotation-per-second="10deg"
@@ -436,7 +437,7 @@
         // Cada modelo puede ser "Exh_opc_01" o { "id", "nombre", "archivo" }
         lista = definicion.modelos.map(m => typeof m === 'string'
           ? { id: m, nombre: m }
-          : { id: m.id, nombre: m.nombre || m.id, archivo: m.archivo, version: m.version });
+          : { id: m.id, nombre: m.nombre || m.id, archivo: m.archivo, usdz: m.usdz, version: m.version });
         if (definicion.titulo) document.querySelector('.brand').textContent = definicion.titulo;
         // Luz guardada para la campaña en Flujo AR (paso 4)
         if (typeof definicion.exposicion === 'number') viewer.exposure = definicion.exposicion;
@@ -480,7 +481,10 @@
           (preset.coleccion ? `?i=${actual + 1}` : `?coleccion=${encodeURIComponent(coleccion)}&i=${actual + 1}`));
       }
 
-      // En iPhone, model-viewer genera el .usdz desde el .glb
+      // En iPhone, model-viewer genera el .usdz desde el .glb (sale sin animación). Las piezas animadas traen
+      // su propio .usdz animado (exportado por el animador de Flujo AR)
+      if (m.usdz) viewer.setAttribute('ios-src', rutaArchivo(m.usdz, m.version));
+      else viewer.removeAttribute('ios-src');
       viewer.setAttribute('src', rutaModelo(m));
       viewer.setAttribute('alt', m.nombre);
     }
@@ -520,10 +524,13 @@
     // con la dirección de la página e ignora <base>, así que en las páginas limpias (/alpina/) una ruta
     // relativa apuntaría a /alpina/models/… y el AR fallaría.
     function rutaModelo(m) {
-      const relativa = m.archivo ? encodeURI(m.archivo) : `models/${m.id}/${m.id}.glb`;
-      const url = new URL(relativa, document.baseURI);
+      return rutaArchivo(m.archivo || `models/${m.id}/${m.id}.glb`, m.version);
+    }
+
+    function rutaArchivo(relativa, version) {
+      const url = new URL(encodeURI(relativa), document.baseURI);
       // Versión del contenido: al reoptimizar cambia, y así nadie usa una copia vieja en caché
-      if (m.version) url.searchParams.set('v', m.version);
+      if (version) url.searchParams.set('v', version);
       return url.href;
     }
 

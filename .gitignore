@@ -9,6 +9,9 @@ models/_originales/
 # QRs generados por Flujo AR (se guardan en tu computador para usarlos en documentos)
 qrs/
 
+# Taller de animación (Blender, pruebas, videos): no se publica; al sitio solo llega lo que pase por el optimizador
+001_ANIMACI*/
+
 # Sistema
 .DS_Store
 Thumbs.db
