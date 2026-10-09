@@ -58,6 +58,12 @@
     var ESCALA = parseFloat(params.get('escala') || '1');                   // 1 = tamaño real
     var ALTURA_OJOS = 1.6;
     var ARCHIVO = 'exhibidor.glb';
+    var VERSION = 'v5';                                   // sube este número en cada cambio
+    // Productos para medir el rendimiento:  ?prod=caja (por defecto, caja roja liviana) · ?prod=real · ?prod=sin
+    var PROD = params.get('prod') || 'real';
+    var VIDRIO = params.get('vidrio') !== '0';            // ?vidrio=0 quita los vidrios del exhibidor
+    document.title = 'Prueba VR ' + VERSION;
+    log('Versión ' + VERSION + ' · productos: ' + PROD);
 
     log('UA: ' + navigator.userAgent);
     log('navigator.xr: ' + (navigator.xr ? 'sí' : 'NO'));
@@ -65,7 +71,8 @@
     // ---------- escena ----------
     // Ajustes de rendimiento por la dirección:  ?aa=0 (sin suavizado de bordes)  ?res=0.8 (menos resolución)  ?pbr=1 (materiales completos)
     var AA = params.get('aa') !== '0';
-    var RES = parseFloat(params.get('res') || '1');
+    var RES = parseFloat(params.get('res') || '1.2');        // >1 = más nitidez (se dibuja a mayor resolución y se reduce)
+    var FOVEA = parseFloat(params.get('fovea') || '0');      // 0 = sin degradado en los bordes de la vista (más nítido); 1 = máximo ahorro
     var PBR = params.get('pbr') === '1';
     var renderer = new THREE.WebGLRenderer({ antialias: AA, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -74,7 +81,8 @@
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local');
     if (renderer.xr.setFramebufferScaleFactor) renderer.xr.setFramebufferScaleFactor(RES);
-    log('Suavizado: ' + (AA ? 'sí' : 'no') + ' · resolución VR: ' + RES + ' · materiales: ' + (PBR ? 'completos' : 'livianos'));
+    if (renderer.xr.setFoveation) renderer.xr.setFoveation(FOVEA);
+    log('Suavizado: ' + (AA ? 'sí' : 'no') + ' · resolución VR: ' + RES + ' · foveación: ' + FOVEA + ' · materiales: ' + (PBR ? 'completos' : 'livianos'));
     document.body.insertBefore(renderer.domElement, document.body.firstChild);
 
     var scene = new THREE.Scene();
@@ -157,10 +165,97 @@
       return new THREE.CanvasTexture(c);
     }
     var letrero = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.6),
-      new THREE.MeshBasicMaterial({ map: textoTextura(['EMPAQUES', 'Apunta y mantén el gatillo para sacarlo', 'Suéltalo y vuelve a su lugar'], 1024, 384),
+      new THREE.MeshBasicMaterial({ map: textoTextura(['EMPAQUES · ' + VERSION, 'Gatillo: sacar un empaque (al soltar vuelve)',
+          'Trackpad: ◄ ► gira · ▲ ▼ avanza  |  Panel: escala'], 1024, 384),
         transparent: true, depthWrite: false }));
     letrero.rotation.x = -Math.PI / 2; letrero.position.set(0, 0.012, -0.9);
     world.add(letrero);
+
+    // ---------- panel de control (escala, acercarse, girar) ----------
+    // Vive en el espacio de la persona (no en el mundo), abajo a la izquierda, al alcance del rayo.
+    var BOTONES = [
+      { id: 'esc-', texto: 'Escala −', c: 0, f: 0, w: 1 }, { id: 'esc+', texto: 'Escala +', c: 1, f: 0, w: 1 },
+      { id: 'acerca', texto: 'Acercar ▲', c: 2, f: 0, w: 1 }, { id: 'aleja', texto: 'Alejar ▼', c: 3, f: 0, w: 1 },
+      { id: 'giraI', texto: '◄ Girar', c: 0, f: 1, w: 1 }, { id: 'giraD', texto: 'Girar ►', c: 1, f: 1, w: 1 },
+      { id: 'reset', texto: 'Reiniciar', c: 2, f: 1, w: 2 }
+    ];
+    var PW = 1024, PH = 400, COLS = 4, FILAS = 2, MARGEN = 14;
+    var panelCv = document.createElement('canvas'); panelCv.width = PW; panelCv.height = PH;
+    var panelCx = panelCv.getContext('2d');
+    var panelTex = new THREE.CanvasTexture(panelCv);
+    var botonHover = null, botonActivo = null;
+    function rectBoton(b) {
+      var cw = PW / COLS, ch = PH / FILAS;
+      return { x: b.c * cw + MARGEN, y: b.f * ch + MARGEN, w: b.w * cw - MARGEN * 2, h: ch - MARGEN * 2 };
+    }
+    function pintarPanel() {
+      panelCx.clearRect(0, 0, PW, PH);
+      panelCx.fillStyle = 'rgba(6,10,18,0.82)'; panelCx.fillRect(0, 0, PW, PH);
+      panelCx.textAlign = 'center'; panelCx.textBaseline = 'middle'; panelCx.font = 'bold 52px sans-serif';
+      BOTONES.forEach(function (b) {
+        var r = rectBoton(b);
+        var vivo = (b.id === botonActivo), sobre = (b.id === botonHover);
+        panelCx.fillStyle = vivo ? '#00E5C8' : sobre ? 'rgba(0,229,200,0.35)' : 'rgba(255,255,255,0.10)';
+        panelCx.fillRect(r.x, r.y, r.w, r.h);
+        panelCx.strokeStyle = 'rgba(0,229,200,0.7)'; panelCx.lineWidth = 3; panelCx.strokeRect(r.x, r.y, r.w, r.h);
+        panelCx.fillStyle = vivo ? '#03040A' : '#E8EBF4';
+        panelCx.fillText(b.texto, r.x + r.w / 2, r.y + r.h / 2);
+      });
+      panelTex.needsUpdate = true;
+    }
+    pintarPanel();
+    var panel = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8 * PH / PW),
+      new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthWrite: false }));
+    panel.position.set(-0.45, -0.38, -0.8);
+    panel.rotation.set(-0.55, 0.45, 0);
+    panel.renderOrder = 10;
+    scene.add(panel);
+    function botonEnUv(uv) {
+      var x = uv.x * PW, y = (1 - uv.y) * PH;
+      for (var i = 0; i < BOTONES.length; i++) {
+        var r = rectBoton(BOTONES[i]);
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return BOTONES[i].id;
+      }
+      return null;
+    }
+    function marcarBotones(hover, activo) {
+      if (hover === botonHover && activo === botonActivo) return;
+      botonHover = hover; botonActivo = activo; pintarPanel();
+    }
+
+    // ---------- navegación: escala del exhibidor, acercarse/alejarse y giro ----------
+    var ESC_MIN = 0.4, ESC_MAX = 5;
+    var rumbo = new THREE.Vector3();
+    function rumboCabeza() {
+      var cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+      cam.getWorldDirection(rumbo); rumbo.y = 0;
+      if (rumbo.lengthSq() < 1e-6) rumbo.set(0, 0, -1);
+      return rumbo.normalize();
+    }
+    function avanzar(metros) {                       // positivo = hacia donde mira; se mueve el mundo al revés
+      var d = rumboCabeza();
+      world.position.x -= d.x * metros; world.position.z -= d.z * metros;
+    }
+    function escalar(factor) {
+      var p = contenedor.userData.pivote;
+      if (!p) return;
+      var s = Math.max(ESC_MIN, Math.min(ESC_MAX, p.scale.x * factor));
+      p.scale.setScalar(s);
+    }
+    function girar(rad) { if (contenedor.userData.pivote) contenedor.userData.pivote.rotation.y += rad; }
+    function reiniciar() {
+      world.position.set(0, -ALTURA_OJOS, 0);
+      var p = contenedor.userData.pivote;
+      if (p) { p.scale.setScalar(1); p.rotation.y = GIRO; }
+    }
+    function aplicarBoton(id, dt) {                  // se llama cada cuadro mientras el botón está presionado
+      if (id === 'esc+') escalar(Math.pow(1.7, dt));
+      else if (id === 'esc-') escalar(Math.pow(1.7, -dt));
+      else if (id === 'acerca') avanzar(1.2 * dt);
+      else if (id === 'aleja') avanzar(-1.2 * dt);
+      else if (id === 'giraI') girar(1.4 * dt);
+      else if (id === 'giraD') girar(-1.4 * dt);
+    }
 
     // ---------- carga del exhibidor ----------
     var contenedor = new THREE.Group();   // se puede girar con el trackpad
@@ -251,6 +346,7 @@
         partes.forEach(function (p) { p.parent.remove(p); });
         modelo.add(m);
       });
+      if (!VIDRIO) modelo.traverse(function (o) { if (o.isMesh && /GLASS/.test(o.material.name || '')) o.visible = false; });
       var llamadasDespues = 0;
       modelo.traverse(function (o) { if (o.isMesh) llamadasDespues++; });
       log('Mallas (llamadas de dibujo): ' + llamadasAntes + ' → ' + llamadasDespues);
@@ -292,9 +388,21 @@
         holder.updateMatrixWorld(true);
         holder.attach(nodo);
         var partes = [];
+        if (PROD === 'caja') {                   // caja roja del mismo tamaño: 12 triángulos y sin textura
+          nodo.traverse(function (m) {
+            if (!m.isMesh) return;
+            m.geometry.computeBoundingBox();
+            var bb = m.geometry.boundingBox, sz = bb.getSize(new THREE.Vector3()), ce = bb.getCenter(new THREE.Vector3());
+            var cg = new THREE.BoxGeometry(sz.x, sz.y, sz.z);
+            cg.translate(ce.x, ce.y, ce.z);
+            m.geometry = cg;
+            m.material = new THREE.MeshLambertMaterial({ color: 0xc0121a });
+          });
+        }
         nodo.traverse(function (m) {
           if (m.isMesh) { partes.push(m); mallasEmpaque.push(m); }
         });
+        if (PROD === 'sin') { nodo.visible = false; partes.forEach(function () { mallasEmpaque.pop(); }); partes = []; }
         holder.userData = {
           esHolder: true, partes: partes, estado: 'reposo', padre: padre,
           pos0: holder.position.clone(), quat0: holder.quaternion.clone(), esc0: holder.scale.clone()
@@ -349,15 +457,21 @@
       var punto = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
       punto.visible = false;
       scene.add(punto);
-      var estado = { obj: c, rayo: rayo, punto: punto, hover: null, agarrado: null };
+      var estado = { obj: c, rayo: rayo, punto: punto, hover: null, agarrado: null, hoverBoton: null, boton: null };
       c.addEventListener('selectstart', function () {
-        if (estado.agarrado) return;
+        if (estado.agarrado || estado.boton) return;
+        if (estado.hoverBoton) {                       // gatillo sobre un botón del panel
+          estado.boton = estado.hoverBoton;
+          if (estado.boton === 'reset') reiniciar();
+          return;
+        }
         if (estado.hover && estado.hover.userData.estado !== 'agarrado') {
           estado.agarrado = estado.hover;
           agarrar(estado.agarrado, c, new THREE.Vector3(0, 0, -0.55));
         }
       });
       c.addEventListener('selectend', function () {
+        estado.boton = null;
         if (estado.agarrado) { soltar(estado.agarrado); estado.agarrado = null; }
       });
       scene.add(c);
@@ -371,24 +485,35 @@
         if (!c.visible) { e.punto.visible = false; return; }
         var previo = e.hover;
         e.hover = null;
+        e.hoverBoton = null;
         var largo = 3;
-        if (!e.agarrado && mallasEmpaque.length) {
+        if (!e.agarrado) {
           tmpMat.identity().extractRotation(c.matrixWorld);
           raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
           raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
-          var hits = raycaster.intersectObjects(mallasEmpaque, false);
+          var blancos = mallasEmpaque.concat([panel]);
+          var hits = raycaster.intersectObjects(blancos, false);
           if (hits.length) {
-            var h = holderDe(hits[0].object);
-            if (h.userData.estado !== 'agarrado') {
-              e.hover = h; largo = hits[0].distance;
+            if (hits[0].object === panel) {
+              e.hoverBoton = botonEnUv(hits[0].uv);
+              largo = hits[0].distance;
               e.punto.position.copy(hits[0].point); e.punto.visible = true;
+            } else {
+              var h = holderDe(hits[0].object);
+              if (h.userData.estado !== 'agarrado') {
+                e.hover = h; largo = hits[0].distance;
+                e.punto.position.copy(hits[0].point); e.punto.visible = true;
+              }
             }
           }
         }
-        if (!e.hover) e.punto.visible = false;
+        if (!e.hover && !e.hoverBoton) e.punto.visible = false;
         if (previo !== e.hover) { if (previo) resaltar(previo, false); if (e.hover) resaltar(e.hover, true); }
         e.rayo.scale.z = e.agarrado ? 0.5 : largo;
       });
+      var hb = null, ab = null;
+      controles.forEach(function (e) { if (e.hoverBoton && !hb) hb = e.hoverBoton; if (e.boton && !ab) ab = e.boton; });
+      marcarBotones(hb, ab);
     }
 
     // animación de empaques (agarrado → hacia la mano · regreso → a su lugar)
@@ -414,7 +539,7 @@
       });
     }
 
-    // trackpad: gira el exhibidor (si ninguna mano sostiene un empaque)
+    // trackpad: ◄ ► gira el exhibidor · ▲ ▼ avanza o retrocede hacia donde mira (si ninguna mano sostiene un empaque)
     function leerTrackpad(dt) {
       var ses = renderer.xr.getSession && renderer.xr.getSession();
       if (!ses || !contenedor.userData.pivote) return;
@@ -423,8 +548,9 @@
       for (var i = 0; i < ses.inputSources.length; i++) {
         var gp = ses.inputSources[i].gamepad;
         if (gp && gp.axes && gp.axes.length >= 2) {
-          var x = gp.axes[0];
-          if (Math.abs(x) > 0.4) contenedor.userData.pivote.rotation.y -= x * dt * 1.4;
+          var x = gp.axes[0], y = gp.axes[1];
+          if (Math.abs(x) > 0.4) girar(-x * dt * 1.4);
+          if (Math.abs(y) > 0.4) avanzar(-y * dt * 1.2);
         }
       }
     }
@@ -433,8 +559,24 @@
     var yaw = 0, pitch = 0, arrastrando = false, movido = false, px = 0, py = 0;
     var sostenido = null;
     var dom = renderer.domElement;
-    dom.addEventListener('pointerdown', function (e) { arrastrando = true; movido = false; px = e.clientX; py = e.clientY; });
+    var botonPantalla = null;                        // botón del panel presionado con el ratón o el dedo
+    var teclas = {};
+    dom.addEventListener('pointerdown', function (e) {
+      if (!renderer.xr.isPresenting) {
+        var r0 = dom.getBoundingClientRect();
+        raycaster.setFromCamera(new THREE.Vector2(((e.clientX - r0.left) / r0.width) * 2 - 1, -((e.clientY - r0.top) / r0.height) * 2 + 1), camera);
+        var hp = raycaster.intersectObject(panel, false);
+        if (hp.length) {
+          var idp = botonEnUv(hp[0].uv);
+          if (idp) { botonPantalla = idp; if (idp === 'reset') reiniciar(); marcarBotones(null, idp); return; }
+        }
+      }
+      arrastrando = true; movido = false; px = e.clientX; py = e.clientY;
+    });
+    dom.addEventListener('wheel', function (e) { escalar(e.deltaY < 0 ? 1.1 : 1 / 1.1); e.preventDefault(); }, { passive: false });
+    window.addEventListener('keyup', function (e) { teclas[e.key] = false; });
     window.addEventListener('pointerup', function (e) {
+      if (botonPantalla) { botonPantalla = null; marcarBotones(null, null); return; }
       if (!arrastrando) return;
       arrastrando = false;
       if (movido || renderer.xr.isPresenting) return;
@@ -452,7 +594,10 @@
       px = e.clientX; py = e.clientY;
       yaw -= dx * 0.005; pitch = Math.max(-1.2, Math.min(1.2, pitch - dy * 0.005));
     });
-    window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sostenido) { soltar(sostenido); sostenido = null; } });
+    window.addEventListener('keydown', function (e) {
+      teclas[e.key] = true;
+      if (e.key === 'Escape' && sostenido) { soltar(sostenido); sostenido = null; }
+    });
     window.addEventListener('resize', function () {
       camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -476,6 +621,7 @@
     renderer.xr.addEventListener('sessionstart', function () {
       document.getElementById('panel').style.display = 'none'; boton.style.display = 'none'; logEl.style.display = 'none';
       if (sostenido) { soltar(sostenido); sostenido = null; }
+      if (renderer.xr.setFoveation) renderer.xr.setFoveation(FOVEA);
     });
     renderer.xr.addEventListener('sessionend', function () {
       document.getElementById('panel').style.display = ''; boton.style.display = 'block'; logEl.style.display = '';
@@ -491,6 +637,14 @@
       } else {
         actualizarApuntado();
         leerTrackpad(dt);
+        controles.forEach(function (e) { if (e.boton) aplicarBoton(e.boton, dt); });
+      }
+      if (!renderer.xr.isPresenting) {
+        if (botonPantalla) aplicarBoton(botonPantalla, dt);
+        if (teclas.w || teclas.ArrowUp) avanzar(1.2 * dt);
+        if (teclas.s || teclas.ArrowDown) avanzar(-1.2 * dt);
+        if (teclas.a || teclas.ArrowLeft) girar(1.4 * dt);
+        if (teclas.d || teclas.ArrowRight) girar(-1.4 * dt);
       }
       animarEmpaques(dt);
       renderer.render(scene, camera);
