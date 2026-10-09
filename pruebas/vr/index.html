@@ -60,7 +60,7 @@
     var ARCHIVO = 'exhibidor.glb';
     var NOMBRE_EX = 'EXHIBIDOR 01';                       // título del panel: dice a cuál exhibidor pertenece
     var PANEL_TAMANO = parseFloat(params.get('panel') || '0.7');   // tamaño del panel de escala (1 = el anterior); ?panel=0.5 lo achica más
-    var VERSION = 'v9';                               // sube este número en cada cambio
+    var VERSION = 'v12';                            // sube este número en cada cambio
     // Productos para medir el rendimiento:  ?prod=caja (por defecto, caja roja liviana) · ?prod=real · ?prod=sin
     var PROD = params.get('prod') || 'real';
     var VIDRIO = params.get('vidrio') !== '0';            // ?vidrio=0 quita los vidrios del exhibidor
@@ -89,7 +89,7 @@
 
     var scene = new THREE.Scene();
     scene.background = new THREE.Color(0x03040a);
-    scene.fog = new THREE.Fog(0x03040a, 14, 40);
+    scene.fog = new THREE.Fog(0x03040a, 24, 60);
     var camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
     scene.add(camera);
 
@@ -107,28 +107,30 @@
     relleno.position.set(0, 0.4, -2.2);
     world.add(relleno);
 
-    var piso = new THREE.Mesh(new THREE.CircleGeometry(7, 48),
+    var RADIO_PISO = 14;                                   // la plataforma crece para recibir más exhibidores
+    var piso = new THREE.Mesh(new THREE.CircleGeometry(RADIO_PISO, 72),
       new THREE.MeshStandardMaterial({ color: 0x0b0e18, roughness: 0.55, metalness: 0.5 }));
     piso.rotation.x = -Math.PI / 2;
     world.add(piso);
-    [2.6, 4.6, 6.6].forEach(function (r, i) {
-      var anillo = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.03, 64),
-        new THREE.MeshBasicMaterial({ color: i === 0 ? 0x00e5c8 : 0x0b6b60 }));
+    [2.6, 4.6, 6.6, 9, 11.5, RADIO_PISO - 0.03].forEach(function (r, i) {
+      var anillo = new THREE.Mesh(new THREE.RingGeometry(r, r + (i === 5 ? 0.06 : 0.03), 96),
+        new THREE.MeshBasicMaterial({ color: (i === 0 || i === 5) ? 0x00e5c8 : 0x0b6b60 }));
       anillo.rotation.x = -Math.PI / 2; anillo.position.y = 0.005;
       world.add(anillo);
     });
-    for (var a = 0; a < 12; a++) {   // líneas radiales
-      var linea = new THREE.Mesh(new THREE.PlaneGeometry(0.02, 4), new THREE.MeshBasicMaterial({ color: 0x0b3f3a }));
-      linea.rotation.x = -Math.PI / 2; linea.rotation.z = a * Math.PI / 6;
-      linea.position.set(Math.sin(a * Math.PI / 6) * 4.6, 0.004, Math.cos(a * Math.PI / 6) * 4.6);
-      linea.rotation.z = -a * Math.PI / 6;
+    for (var a = 0; a < 16; a++) {   // líneas radiales, del primer anillo al borde
+      var ang = a * Math.PI / 8;
+      var linea = new THREE.Mesh(new THREE.PlaneGeometry(0.02, RADIO_PISO - 2.6), new THREE.MeshBasicMaterial({ color: 0x0b3f3a }));
+      linea.rotation.x = -Math.PI / 2; linea.rotation.z = -ang;
+      var rm = (RADIO_PISO + 2.6) / 2;
+      linea.position.set(Math.sin(ang) * rm, 0.004, Math.cos(ang) * rm);
       world.add(linea);
     }
     // arcos de la estación
-    for (var k = 0; k < 6; k++) {
-      var arco = new THREE.Mesh(new THREE.TorusGeometry(8.5, 0.07, 6, 48, Math.PI),
+    for (var k = 0; k < 8; k++) {
+      var arco = new THREE.Mesh(new THREE.TorusGeometry(14.5, 0.09, 6, 64, Math.PI),
         new THREE.MeshBasicMaterial({ color: 0x0a5a50 }));
-      arco.position.z = 4 - k * 4.5;
+      arco.position.z = 8 - k * 6;
       world.add(arco);
     }
     // estrellas
@@ -154,7 +156,7 @@
     world.add(charco);
 
     // logo al fondo de la estación (lejos para que se note la profundidad, grande para que se lea)
-    var LOGO_ANCHO = 5.0, LOGO_ALTO = LOGO_ANCHO * 150 / 620;
+    var LOGO_ANCHO = 6.0, LOGO_ALTO = LOGO_ANCHO * 150 / 620;
     var cvBrillo = document.createElement('canvas'); cvBrillo.width = cvBrillo.height = 256;
     var cxBrillo = cvBrillo.getContext('2d');
     var grBrillo = cxBrillo.createRadialGradient(128, 128, 0, 128, 128, 128);
@@ -162,7 +164,7 @@
     cxBrillo.fillStyle = grBrillo; cxBrillo.fillRect(0, 0, 256, 256);
     var brilloLogo = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_ANCHO * 1.5, LOGO_ALTO * 3.2),
       new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvBrillo), transparent: true, depthWrite: false, fog: false }));
-    brilloLogo.position.set(0, 2.7, -8.05);
+    brilloLogo.position.set(0, 4.0, -10.05);
     world.add(brilloLogo);
     var texLogo = new THREE.TextureLoader().load('logo.png', function () { log('Logo cargado'); },
       undefined, function () { log('No se pudo cargar logo.png', true); });
@@ -170,7 +172,7 @@
     texLogo.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     var logo = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_ANCHO, LOGO_ALTO),
       new THREE.MeshBasicMaterial({ map: texLogo, transparent: true, depthWrite: false, fog: false }));
-    logo.position.set(0, 2.7, -8);
+    logo.position.set(0, 4.0, -10);        // por encima de la isla (2,1 m) y detrás de ella
     world.add(logo);
 
     // letrero en el piso con las instrucciones
@@ -216,7 +218,7 @@
     }
     function pintarPanel() {
       var g = panelCx;
-      var s = (contenedor && contenedor.userData.pivote) ? contenedor.userData.pivote.scale.x : 1;
+      var s = (exActivo && exActivo.pivote) ? exActivo.pivote.scale.x : 1;
       escalaPintada = Math.round(s * 100);
       var real = Math.abs(s - 1) < 0.005;
       g.clearRect(0, 0, PW, PH);
@@ -225,7 +227,7 @@
       g.strokeStyle = 'rgba(0,229,200,0.75)'; g.lineWidth = 4; g.stroke();
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillStyle = '#00E5C8'; g.font = 'bold 27px sans-serif';
-      g.fillText(NOMBRE_EX, PW / 2, 46);
+      g.fillText(exActivo ? exActivo.nombre : NOMBRE_EX, PW / 2, 46);
       g.fillStyle = 'rgba(232,235,244,0.65)'; g.font = 'bold 24px sans-serif';
       g.fillText('ESCALA', PW / 2, 90);
       // lectura de la escala actual
@@ -262,8 +264,12 @@
     var pBox = new THREE.Box3(), pCentro = new THREE.Vector3(), pTam = new THREE.Vector3();
     var pCab = new THREE.Vector3(), pDir = new THREE.Vector3(), pDer = new THREE.Vector3(), pArriba = new THREE.Vector3(0, 1, 0);
     // El panel se ubica junto al exhibidor (a la derecha, visto desde la persona) y mira hacia ella
+    var exActivo = null;                 // exhibidor al que se apuntó por última vez: el panel lo controla
+    function elegirExhibidor(ex) {
+      if (ex && ex !== exActivo) { exActivo = ex; pintarPanel(); }
+    }
     function ubicarPanel() {
-      var piv = contenedor.userData.pivote;
+      var piv = exActivo && exActivo.pivote;
       if (!piv) return;
       pBox.setFromObject(piv);
       pBox.getCenter(pCentro); pBox.getSize(pTam);
@@ -309,15 +315,15 @@
       world.position.x -= d.x * metros; world.position.z -= d.z * metros;
     }
     function escalar(factor) {
-      var p = contenedor.userData.pivote;
+      var p = exActivo && exActivo.pivote;
       if (!p) return;
       var s = Math.max(ESC_MIN, Math.min(ESC_MAX, p.scale.x * factor));
       p.scale.setScalar(s);
       if (Math.round(s * 100) !== escalaPintada) pintarPanel();
     }
-    function girar(rad) { if (contenedor.userData.pivote) contenedor.userData.pivote.rotation.y += rad; }
+    function girar(rad) { if (exActivo && exActivo.pivote) exActivo.pivote.rotation.y += rad; }
     function escalaReal() {                          // 1:1 = tamaño nativo del archivo (se exportó con medidas reales)
-      var p = contenedor.userData.pivote;
+      var p = exActivo && exActivo.pivote;
       if (p) { p.scale.setScalar(1); pintarPanel(); }
     }
     function aplicarBoton(id, dt) {                  // se llama cada cuadro mientras el botón está presionado
@@ -348,11 +354,13 @@
     var anisotropia = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     function liviano(m) {                       // PBR -> Lambert (mucho más barato en el Go)
       if (PBR || !m.isMeshStandardMaterial) return m.clone();
+      var vidrio = m.transmission > 0;                      // acrílico/vidrio con transmisión: se aproxima con transparencia simple
       var n = new THREE.MeshLambertMaterial({
         name: m.name, color: m.color.clone(), map: m.map, emissive: m.emissive.clone(), emissiveMap: m.emissiveMap,
         emissiveIntensity: m.emissiveIntensity, transparent: m.transparent, opacity: m.opacity,
         side: m.side, alphaTest: m.alphaTest, depthWrite: m.depthWrite
       });
+      if (vidrio) { n.transparent = true; n.opacity = 0.28; n.depthWrite = false; }
       return n;
     }
     function afinar(m) { if (m.map) m.map.anisotropy = anisotropia; return m; }
@@ -372,18 +380,36 @@
         }
         geos.push(g);
       }
-      return THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false);
+      // si unas piezas traen uv/normal y otras no, a las que faltan se les pone en cero para poder unirlas
+      ['uv', 'normal'].forEach(function (nombre) {
+        var algunas = geos.some(function (g) { return g.attributes[nombre]; });
+        var todas = geos.every(function (g) { return g.attributes[nombre]; });
+        if (algunas && !todas) {
+          var tam = nombre === 'uv' ? 2 : 3;
+          geos.forEach(function (g) {
+            if (!g.attributes[nombre]) g.setAttribute(nombre, new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * tam), tam));
+          });
+        }
+      });
+      var unida = THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false);
+      if (!unida) log('No se pudieron unir ' + partes.length + ' piezas (' + ((partes[0].material && partes[0].material.name) || 'sin nombre') + '): ' +
+        geos.map(function (g) { return Object.keys(g.attributes).join('+') + (g.index ? '/i' : ''); }).slice(0, 3).join(' · '), true);
+      return unida;
     }
 
-    loader.load(ARCHIVO, function (gltf) {
+    var exhibidores = [];
+    // cfg: { archivo, nombre, principal, paquetes, pos:[x,z], giro }
+    function cargarExhibidor(cfg) {
+    var ex = { nombre: cfg.nombre, pivote: null };
+    loader.load(cfg.archivo, function (gltf) {
       var modelo = gltf.scene;
-      modelo.scale.setScalar(ESCALA);
+      modelo.scale.setScalar(cfg.principal ? ESCALA : 1);
       modelo.updateMatrixWorld(true);
 
-      // 1) nodos de empaque = padres de las partes con material "SELLO ROJO"
+      // 1) nodos de empaque = padres de las partes con material "SELLO ROJO" (solo si el exhibidor tiene empaques sueltos)
       var nodosEmpaque = [];
       modelo.traverse(function (o) {
-        if (!o.isMesh) return;
+        if (!o.isMesh || cfg.paquetes === false) return;
         var nm = (o.material && o.material.name) || '';
         var p = o.parent;
         if (nm.indexOf('SELLO ROJO') >= 0 && p && p !== modelo && nodosEmpaque.indexOf(p) < 0) nodosEmpaque.push(p);
@@ -425,10 +451,11 @@
       if (!VIDRIO) modelo.traverse(function (o) { if (o.isMesh && /GLASS/.test(o.material.name || '')) o.visible = false; });
       var llamadasDespues = 0;
       modelo.traverse(function (o) { if (o.isMesh) llamadasDespues++; });
-      log('Mallas (llamadas de dibujo): ' + llamadasAntes + ' → ' + llamadasDespues);
+      log(cfg.nombre + ' · mallas (llamadas de dibujo): ' + llamadasAntes + ' → ' + llamadasDespues);
       modelo.traverse(function (o) {
         if (!o.isMesh || /GLASS/.test((o.material && o.material.name) || '')) return;
         for (var a = o.parent; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;
+        o.userData.ex = ex;
         mallasExhibidor.push(o);
       });
       modelo.updateMatrixWorld(true);
@@ -438,14 +465,24 @@
       modelo.position.set(-centro.x, -caja.min.y, -centro.z);
       var pivote = new THREE.Group();
       pivote.add(modelo);
-      pivote.rotation.y = GIRO;
-      pivote.position.set(0, 0, -(Math.max(size.x, size.z) / 2 + 1.3));
+      pivote.rotation.y = cfg.giro != null ? cfg.giro : GIRO;
+      if (cfg.pos) pivote.position.set(cfg.pos[0], 0, cfg.pos[1]);
+      else pivote.position.set(0, 0, -(Math.max(size.x, size.z) / 2 + 1.3));
       contenedor.add(pivote);
-      contenedor.userData.pivote = pivote;
+      ex.pivote = pivote;
+      exhibidores.push(ex);
+      if (!exActivo || cfg.principal) elegirExhibidor(ex);
       pivote.updateMatrixWorld(true);
-      log('Exhibidor: ' + size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2) + ' m');
-      relleno.position.copy(pivote.position).setY(0.5);
-      charco.position.x = pivote.position.x; charco.position.z = pivote.position.z;
+      log(cfg.nombre + ': ' + size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2) + ' m');
+      if (cfg.principal) {
+        relleno.position.copy(pivote.position).setY(0.5);
+        charco.position.x = pivote.position.x; charco.position.z = pivote.position.z;
+      } else {                                               // charco de luz propio
+        var charco2 = charco.clone();
+        charco2.position.set(pivote.position.x, 0.008, pivote.position.z);
+        charco2.scale.setScalar(Math.max(size.x, size.z) / 2.2);
+        world.add(charco2);
+      }
 
       // Cada empaque del glb es un nodo con ~51 partes (todas con el material "SELLO ROJO")
       var triangulos = 0;
@@ -489,7 +526,7 @@
         if (partes.length) { partes[0].geometry.computeBoundingBox(); partes[0].geometry.boundingBox.getSize(dims); }
         var ejeFino = dims.x <= dims.y && dims.x <= dims.z ? 0 : (dims.y <= dims.z ? 1 : 2);
         holder.userData = {
-          esHolder: true, partes: partes, estado: 'reposo', padre: padre,
+          esHolder: true, ex: ex, partes: partes, estado: 'reposo', padre: padre,
           pos0: holder.position.clone(), quat0: holder.quaternion.clone(), esc0: holder.scale.clone(),
           dims: dims, ejeFino: ejeFino, espesor: dims.getComponent(ejeFino),
           vel: new THREE.Vector3(), v: new THREE.Vector3(), omega: new THREE.Vector3(), pPrev: null,
@@ -500,16 +537,23 @@
         slots.push(casilla);
         empaques.push(holder);
       });
-      log('Empaques sueltos: ' + empaques.length + (empaques.length ? '' : ' (no se encontraron)'), empaques.length === 0);
-      estadoEl.textContent = empaques.length + ' empaques · ' +
+      if (cfg.paquetes !== false) log('Empaques sueltos: ' + empaques.length + (empaques.length ? '' : ' (no se encontraron)'), empaques.length === 0);
+      estadoEl.textContent = exhibidores.length + ' de 2 exhibidores · ' +
         (renderer.xr.isPresenting ? 'apunta con el mando' : 'arrastra para mirar, clic en un empaque');
     }, function (xhr) {
-      if (xhr.total) estadoEl.textContent = 'Cargando ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
-    }, function (e) { log('No se pudo cargar ' + ARCHIVO + ': ' + (e && e.message ? e.message : e), true); });
+      if (xhr.total) estadoEl.textContent = 'Cargando ' + cfg.nombre + ' ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
+    }, function (e) { log('No se pudo cargar ' + cfg.archivo + ': ' + (e && e.message ? e.message : e), true); });
+    }
+
+    // Distribución en cruz vista desde arriba, con la persona en el centro (0, 0):
+    //   adelante (lado del logo): ISLA 2X2 · atrás: EXHIBIDOR 01 · izquierda y derecha: pendientes
+    // Los frentes de los exhibidores miran al centro. Los brazos quedan a ~3,5 m del centro (borde frontal).
+    cargarExhibidor({ archivo: 'isla.glb', nombre: 'ISLA 2X2', principal: false, paquetes: false, pos: [0, -4.6], giro: 0 });
+    cargarExhibidor({ archivo: ARCHIVO, nombre: 'EXHIBIDOR 01', principal: true, paquetes: true, pos: [0, 3.7], giro: Math.PI });
 
     // ---------- interacción ----------
     var raycaster = new THREE.Raycaster();
-    raycaster.far = 6;
+    raycaster.far = 14;
     var tmpMat = new THREE.Matrix4();
     var controles = [];
     function holderDe(malla) {
@@ -537,7 +581,7 @@
 
     // casilla libre más cercana al empaque (dentro del radio de acople), o null
     function casillaCercana(holder) {
-      var piv = contenedor.userData.pivote;
+      var piv = holder.userData.ex && holder.userData.ex.pivote;
       var R = 0.22 * (piv ? piv.scale.x : 1);
       var mejor = null, d2 = R * R;
       holder.getWorldPosition(vA);
@@ -652,11 +696,13 @@
               largo = hits[0].distance;
               e.punto.position.copy(hits[0].point); e.punto.visible = true;
             } else if (mallasExhibidor.indexOf(hits[0].object) >= 0) {
+              elegirExhibidor(hits[0].object.userData.ex);
               largo = hits[0].distance;
               e.punto.position.copy(hits[0].point); e.punto.visible = true;
             } else {
               var h = holderDe(hits[0].object);
               if (h.userData.estado !== 'agarrado') {
+                elegirExhibidor(h.userData.ex);
                 e.hover = h; largo = hits[0].distance;
                 e.punto.position.copy(hits[0].point); e.punto.visible = true;
               }
@@ -677,10 +723,10 @@
     function animarEmpaques(dt) {
       var k = 1 - Math.exp(-12 * dt);
       var qId = new THREE.Quaternion();
-      var piv = contenedor.userData.pivote;
-      var escEx = piv ? piv.scale.x : 1;                       // los empaques sueltos acompañan la escala del exhibidor
       empaques.forEach(function (h) {
         var u = h.userData;
+        var piv = u.ex && u.ex.pivote;
+        var escEx = piv ? piv.scale.x : 1;                     // los empaques sueltos acompañan la escala de su exhibidor
         if (u.estado === 'agarrado') {
           h.position.lerp(u.destino, k);
           h.quaternion.slerp(qId, k);
@@ -739,18 +785,30 @@
     // trackpad: ◄ ► gira el exhibidor · ▲ ▼ avanza o retrocede hacia donde mira (si ninguna mano sostiene un empaque)
     function leerTrackpad(dt) {
       var ses = renderer.xr.getSession && renderer.xr.getSession();
-      if (!ses || !contenedor.userData.pivote) return;
+      if (!ses || !exActivo || !exActivo.pivote) return;
       var alguno = controles.some(function (e) { return e.agarrado; });
       if (alguno) return;
       for (var i = 0; i < ses.inputSources.length; i++) {
         var gp = ses.inputSources[i].gamepad;
         if (gp && gp.axes && gp.axes.length >= 2) {
           var x = gp.axes[0], y = gp.axes[1];
-          if (Math.abs(x) > 0.4) girar(-x * dt * 1.4);
-          if (Math.abs(y) > 0.4) avanzar(-y * dt * 1.2);
+          var mayor = Math.max(Math.abs(x), Math.abs(y));
+          if (mayor < 0.12) { ejeBloqueado[i] = null; continue; }          // dedo levantado: se libera el eje
+          // Al apoyar el dedo se elige UN eje (el dominante) y se mantiene hasta soltar: evita que avanzar también gire
+          if (!ejeBloqueado[i]) {
+            if (mayor < 0.45) continue;
+            ejeBloqueado[i] = Math.abs(y) > Math.abs(x) ? 'y' : 'x';
+          }
+          var v = ejeBloqueado[i] === 'y' ? y : x;
+          var fuerza = Math.max(0, (Math.abs(v) - 0.3) / 0.7);               // zona muerta del 30 % y arranque suave
+          if (fuerza === 0) continue;
+          var signo = v < 0 ? -1 : 1;
+          if (ejeBloqueado[i] === 'y') avanzar(-signo * fuerza * dt * 1.2);
+          else girar(-signo * fuerza * dt * 1.4);
         }
       }
     }
+    var ejeBloqueado = [];
 
     // ---------- modo pantalla (PC / celular): arrastrar para mirar, clic para sacar un empaque ----------
     var yaw = 0, pitch = 0, arrastrando = false, movido = false, px = 0, py = 0;
@@ -791,7 +849,12 @@
         raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rm.left) / rm.width) * 2 - 1, -((e.clientY - rm.top) / rm.height) * 2 + 1), camera);
         var lista = mallasEmpaque.concat(mallasExhibidor);
         if (panel.visible) lista.push(panel);
-        if (raycaster.intersectObjects(lista, false).length) mostrarPanel();
+        var hm = raycaster.intersectObjects(lista, false);
+        if (hm.length) {
+          mostrarPanel();
+          var ob = hm[0].object;
+          if (ob !== panel) elegirExhibidor(ob.userData.ex || (holderDe(ob) && holderDe(ob).userData.ex));
+        }
         return;
       }
       var dx = e.clientX - px, dy = e.clientY - py;
