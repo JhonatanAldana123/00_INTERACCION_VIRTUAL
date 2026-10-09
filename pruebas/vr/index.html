@@ -60,7 +60,7 @@
     var ARCHIVO = 'exhibidor.glb';
     var NOMBRE_EX = 'EXHIBIDOR 01';                       // título del panel: dice a cuál exhibidor pertenece
     var PANEL_TAMANO = parseFloat(params.get('panel') || '0.7');   // tamaño del panel de escala (1 = el anterior); ?panel=0.5 lo achica más
-    var VERSION = 'v12';                            // sube este número en cada cambio
+    var VERSION = 'v13';                           // sube este número en cada cambio
     // Productos para medir el rendimiento:  ?prod=caja (por defecto, caja roja liviana) · ?prod=real · ?prod=sin
     var PROD = params.get('prod') || 'real';
     var VIDRIO = params.get('vidrio') !== '0';            // ?vidrio=0 quita los vidrios del exhibidor
@@ -164,7 +164,7 @@
     cxBrillo.fillStyle = grBrillo; cxBrillo.fillRect(0, 0, 256, 256);
     var brilloLogo = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_ANCHO * 1.5, LOGO_ALTO * 3.2),
       new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvBrillo), transparent: true, depthWrite: false, fog: false }));
-    brilloLogo.position.set(0, 4.0, -10.05);
+    brilloLogo.position.set(0, 4.0, -8.55);
     world.add(brilloLogo);
     var texLogo = new THREE.TextureLoader().load('logo.png', function () { log('Logo cargado'); },
       undefined, function () { log('No se pudo cargar logo.png', true); });
@@ -172,7 +172,7 @@
     texLogo.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     var logo = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_ANCHO, LOGO_ALTO),
       new THREE.MeshBasicMaterial({ map: texLogo, transparent: true, depthWrite: false, fog: false }));
-    logo.position.set(0, 4.0, -10);        // por encima de la isla (2,1 m) y detrás de ella
+    logo.position.set(0, 4.0, -8.5);       // por encima de la isla (2,1 m) y detrás de ella
     world.add(logo);
 
     // letrero en el piso con las instrucciones
@@ -547,9 +547,9 @@
 
     // Distribución en cruz vista desde arriba, con la persona en el centro (0, 0):
     //   adelante (lado del logo): ISLA 2X2 · atrás: EXHIBIDOR 01 · izquierda y derecha: pendientes
-    // Los frentes de los exhibidores miran al centro. Los brazos quedan a ~3,5 m del centro (borde frontal).
-    cargarExhibidor({ archivo: 'isla.glb', nombre: 'ISLA 2X2', principal: false, paquetes: false, pos: [0, -4.6], giro: 0 });
-    cargarExhibidor({ archivo: ARCHIVO, nombre: 'EXHIBIDOR 01', principal: true, paquetes: true, pos: [0, 3.7], giro: Math.PI });
+    // Los frentes de los exhibidores miran al centro. Los brazos quedan a ~2,4 m del centro (borde frontal).
+    cargarExhibidor({ archivo: 'isla.glb', nombre: 'ISLA 2X2', principal: false, paquetes: false, pos: [0, -3.5], giro: 0 });
+    cargarExhibidor({ archivo: ARCHIVO, nombre: 'EXHIBIDOR 01', principal: true, paquetes: true, pos: [0, 2.6], giro: Math.PI });
 
     // ---------- interacción ----------
     var raycaster = new THREE.Raycaster();
