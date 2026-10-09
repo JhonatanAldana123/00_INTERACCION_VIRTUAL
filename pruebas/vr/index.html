@@ -58,7 +58,9 @@
     var ESCALA = parseFloat(params.get('escala') || '1');                   // 1 = tamaño real
     var ALTURA_OJOS = 1.6;
     var ARCHIVO = 'exhibidor.glb';
-    var VERSION = 'v5';                                   // sube este número en cada cambio
+    var NOMBRE_EX = 'EXHIBIDOR 01';                       // título del panel: dice a cuál exhibidor pertenece
+    var PANEL_TAMANO = parseFloat(params.get('panel') || '0.7');   // tamaño del panel de escala (1 = el anterior); ?panel=0.5 lo achica más
+    var VERSION = 'v9';                               // sube este número en cada cambio
     // Productos para medir el rendimiento:  ?prod=caja (por defecto, caja roja liviana) · ?prod=real · ?prod=sin
     var PROD = params.get('prod') || 'real';
     var VIDRIO = params.get('vidrio') !== '0';            // ?vidrio=0 quita los vidrios del exhibidor
@@ -151,6 +153,26 @@
     charco.rotation.x = -Math.PI / 2; charco.position.set(0, 0.008, -2.2);
     world.add(charco);
 
+    // logo al fondo de la estación (lejos para que se note la profundidad, grande para que se lea)
+    var LOGO_ANCHO = 5.0, LOGO_ALTO = LOGO_ANCHO * 150 / 620;
+    var cvBrillo = document.createElement('canvas'); cvBrillo.width = cvBrillo.height = 256;
+    var cxBrillo = cvBrillo.getContext('2d');
+    var grBrillo = cxBrillo.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grBrillo.addColorStop(0, 'rgba(0,229,200,0.22)'); grBrillo.addColorStop(1, 'rgba(0,229,200,0)');
+    cxBrillo.fillStyle = grBrillo; cxBrillo.fillRect(0, 0, 256, 256);
+    var brilloLogo = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_ANCHO * 1.5, LOGO_ALTO * 3.2),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvBrillo), transparent: true, depthWrite: false, fog: false }));
+    brilloLogo.position.set(0, 2.7, -8.05);
+    world.add(brilloLogo);
+    var texLogo = new THREE.TextureLoader().load('logo.png', function () { log('Logo cargado'); },
+      undefined, function () { log('No se pudo cargar logo.png', true); });
+    texLogo.encoding = THREE.sRGBEncoding;
+    texLogo.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    var logo = new THREE.Mesh(new THREE.PlaneGeometry(LOGO_ANCHO, LOGO_ALTO),
+      new THREE.MeshBasicMaterial({ map: texLogo, transparent: true, depthWrite: false, fog: false }));
+    logo.position.set(0, 2.7, -8);
+    world.add(logo);
+
     // letrero en el piso con las instrucciones
     function textoTextura(lineas, w, h) {
       var c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -160,60 +182,109 @@
       g.font = 'bold ' + Math.round(h * 0.26) + 'px sans-serif';
       g.fillText(lineas[0], w / 2, h * 0.38);
       g.fillStyle = 'rgba(232,235,244,0.85)';
-      g.font = Math.round(h * 0.17) + 'px sans-serif';
+      g.font = Math.round(h * 0.135) + 'px sans-serif';
       for (var i = 1; i < lineas.length; i++) g.fillText(lineas[i], w / 2, h * (0.38 + 0.22 * i));
       return new THREE.CanvasTexture(c);
     }
     var letrero = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.6),
-      new THREE.MeshBasicMaterial({ map: textoTextura(['EMPAQUES · ' + VERSION, 'Gatillo: sacar un empaque (al soltar vuelve)',
-          'Trackpad: ◄ ► gira · ▲ ▼ avanza  |  Panel: escala'], 1024, 384),
+      new THREE.MeshBasicMaterial({ map: textoTextura(['EMPAQUES · ' + VERSION, 'Gatillo: sacar el empaque',
+          'Suelta lejos: cae · en un hueco: se acomoda'], 1024, 384),
         transparent: true, depthWrite: false }));
     letrero.rotation.x = -Math.PI / 2; letrero.position.set(0, 0.012, -0.9);
     world.add(letrero);
 
-    // ---------- panel de control (escala, acercarse, girar) ----------
-    // Vive en el espacio de la persona (no en el mundo), abajo a la izquierda, al alcance del rayo.
+    // ---------- panel de escala (vertical, a la derecha) ----------
+    // Vive en el espacio de la persona (no en el mundo), al alcance del rayo.
+    var PW = 320, PH = 800;
     var BOTONES = [
-      { id: 'esc-', texto: 'Escala −', c: 0, f: 0, w: 1 }, { id: 'esc+', texto: 'Escala +', c: 1, f: 0, w: 1 },
-      { id: 'acerca', texto: 'Acercar ▲', c: 2, f: 0, w: 1 }, { id: 'aleja', texto: 'Alejar ▼', c: 3, f: 0, w: 1 },
-      { id: 'giraI', texto: '◄ Girar', c: 0, f: 1, w: 1 }, { id: 'giraD', texto: 'Girar ►', c: 1, f: 1, w: 1 },
-      { id: 'reset', texto: 'Reiniciar', c: 2, f: 1, w: 2 }
+      { id: 'esc+', r: { x: 30, y: 130, w: 260, h: 170 } },
+      { id: 'esc-', r: { x: 30, y: 450, w: 260, h: 170 } },
+      { id: 'real', r: { x: 30, y: 650, w: 260, h: 120 } }
     ];
-    var PW = 1024, PH = 400, COLS = 4, FILAS = 2, MARGEN = 14;
     var panelCv = document.createElement('canvas'); panelCv.width = PW; panelCv.height = PH;
     var panelCx = panelCv.getContext('2d');
     var panelTex = new THREE.CanvasTexture(panelCv);
-    var botonHover = null, botonActivo = null;
-    function rectBoton(b) {
-      var cw = PW / COLS, ch = PH / FILAS;
-      return { x: b.c * cw + MARGEN, y: b.f * ch + MARGEN, w: b.w * cw - MARGEN * 2, h: ch - MARGEN * 2 };
+    var botonHover = null, botonActivo = null, escalaPintada = -1;
+    function rectBoton(b) { return b.r; }
+    function rectaRedonda(g, x, y, w, h, r) {
+      g.beginPath();
+      g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+      g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+      g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y);
+      g.closePath();
     }
     function pintarPanel() {
-      panelCx.clearRect(0, 0, PW, PH);
-      panelCx.fillStyle = 'rgba(6,10,18,0.82)'; panelCx.fillRect(0, 0, PW, PH);
-      panelCx.textAlign = 'center'; panelCx.textBaseline = 'middle'; panelCx.font = 'bold 52px sans-serif';
+      var g = panelCx;
+      var s = (contenedor && contenedor.userData.pivote) ? contenedor.userData.pivote.scale.x : 1;
+      escalaPintada = Math.round(s * 100);
+      var real = Math.abs(s - 1) < 0.005;
+      g.clearRect(0, 0, PW, PH);
+      rectaRedonda(g, 4, 4, PW - 8, PH - 8, 34);
+      g.fillStyle = 'rgba(6,10,18,0.88)'; g.fill();
+      g.strokeStyle = 'rgba(0,229,200,0.75)'; g.lineWidth = 4; g.stroke();
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#00E5C8'; g.font = 'bold 27px sans-serif';
+      g.fillText(NOMBRE_EX, PW / 2, 46);
+      g.fillStyle = 'rgba(232,235,244,0.65)'; g.font = 'bold 24px sans-serif';
+      g.fillText('ESCALA', PW / 2, 90);
+      // lectura de la escala actual
+      g.fillStyle = real ? '#00E5C8' : '#E8EBF4'; g.font = 'bold 66px sans-serif';
+      g.fillText((s >= 10 ? s.toFixed(1) : s.toFixed(2)) + '×', PW / 2, 375);
       BOTONES.forEach(function (b) {
-        var r = rectBoton(b);
+        var r = b.r;
         var vivo = (b.id === botonActivo), sobre = (b.id === botonHover);
-        panelCx.fillStyle = vivo ? '#00E5C8' : sobre ? 'rgba(0,229,200,0.35)' : 'rgba(255,255,255,0.10)';
-        panelCx.fillRect(r.x, r.y, r.w, r.h);
-        panelCx.strokeStyle = 'rgba(0,229,200,0.7)'; panelCx.lineWidth = 3; panelCx.strokeRect(r.x, r.y, r.w, r.h);
-        panelCx.fillStyle = vivo ? '#03040A' : '#E8EBF4';
-        panelCx.fillText(b.texto, r.x + r.w / 2, r.y + r.h / 2);
+        var resaltado = b.id === 'real' && real;
+        rectaRedonda(g, r.x, r.y, r.w, r.h, 28);
+        g.fillStyle = vivo ? '#00E5C8' : sobre ? 'rgba(0,229,200,0.38)' : resaltado ? 'rgba(0,229,200,0.18)' : 'rgba(255,255,255,0.08)';
+        g.fill();
+        g.strokeStyle = 'rgba(0,229,200,0.8)'; g.lineWidth = 3; g.stroke();
+        g.strokeStyle = vivo ? '#03040A' : '#E8EBF4'; g.fillStyle = g.strokeStyle;
+        var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        if (b.id === 'real') {
+          g.font = 'bold 60px sans-serif'; g.fillText('1:1', cx, cy - 12);
+          g.font = '24px sans-serif'; g.fillText('tamaño real', cx, cy + 36);
+        } else {
+          g.lineWidth = 16; g.lineCap = 'round';
+          g.beginPath(); g.moveTo(cx - 42, cy); g.lineTo(cx + 42, cy); g.stroke();
+          if (b.id === 'esc+') { g.beginPath(); g.moveTo(cx, cy - 42); g.lineTo(cx, cy + 42); g.stroke(); }
+        }
       });
       panelTex.needsUpdate = true;
     }
-    pintarPanel();
-    var panel = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8 * PH / PW),
+    var panel = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22 * PH / PW),
       new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthWrite: false }));
-    panel.position.set(-0.45, -0.38, -0.8);
-    panel.rotation.set(-0.55, 0.45, 0);
     panel.renderOrder = 10;
+    panel.visible = false;               // aparece solo al apuntar al exhibidor y se esconde a los 2,5 s
     scene.add(panel);
+    var panelHasta = 0;                  // instante (ms) hasta el que el panel sigue visible
+    function mostrarPanel() { panelHasta = performance.now() + 2500; }
+    var pBox = new THREE.Box3(), pCentro = new THREE.Vector3(), pTam = new THREE.Vector3();
+    var pCab = new THREE.Vector3(), pDir = new THREE.Vector3(), pDer = new THREE.Vector3(), pArriba = new THREE.Vector3(0, 1, 0);
+    // El panel se ubica junto al exhibidor (a la derecha, visto desde la persona) y mira hacia ella
+    function ubicarPanel() {
+      var piv = contenedor.userData.pivote;
+      if (!piv) return;
+      pBox.setFromObject(piv);
+      pBox.getCenter(pCentro); pBox.getSize(pTam);
+      var cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+      cam.getWorldPosition(pCab);
+      pDir.set(pCentro.x - pCab.x, 0, pCentro.z - pCab.z);
+      if (pDir.lengthSq() < 1e-6) pDir.set(0, 0, -1);
+      pDir.normalize();
+      pDer.crossVectors(pDir, pArriba).normalize();                       // derecha de quien mira
+      var mitad = 0.5 * (Math.abs(pDer.x) * pTam.x + Math.abs(pDer.z) * pTam.z);
+      panel.position.copy(pCentro).addScaledVector(pDer, mitad + 0.2);
+      panel.position.y = Math.max(-1.0, Math.min(0.1, pCentro.y));
+      var dist = panel.position.distanceTo(pCab);
+      panel.scale.setScalar(Math.max(0.5, Math.min(2, dist / 1.6)) * PANEL_TAMANO);   // se agranda con la distancia para seguir legible
+      panel.lookAt(pCab);
+      panel.updateMatrixWorld(true);
+    }
     function botonEnUv(uv) {
       var x = uv.x * PW, y = (1 - uv.y) * PH;
       for (var i = 0; i < BOTONES.length; i++) {
-        var r = rectBoton(BOTONES[i]);
+        var r = BOTONES[i].r;
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return BOTONES[i].id;
       }
       return null;
@@ -222,6 +293,7 @@
       if (hover === botonHover && activo === botonActivo) return;
       botonHover = hover; botonActivo = activo; pintarPanel();
     }
+    pintarPanel();
 
     // ---------- navegación: escala del exhibidor, acercarse/alejarse y giro ----------
     var ESC_MIN = 0.4, ESC_MAX = 5;
@@ -241,12 +313,12 @@
       if (!p) return;
       var s = Math.max(ESC_MIN, Math.min(ESC_MAX, p.scale.x * factor));
       p.scale.setScalar(s);
+      if (Math.round(s * 100) !== escalaPintada) pintarPanel();
     }
     function girar(rad) { if (contenedor.userData.pivote) contenedor.userData.pivote.rotation.y += rad; }
-    function reiniciar() {
-      world.position.set(0, -ALTURA_OJOS, 0);
+    function escalaReal() {                          // 1:1 = tamaño nativo del archivo (se exportó con medidas reales)
       var p = contenedor.userData.pivote;
-      if (p) { p.scale.setScalar(1); p.rotation.y = GIRO; }
+      if (p) { p.scale.setScalar(1); pintarPanel(); }
     }
     function aplicarBoton(id, dt) {                  // se llama cada cuadro mientras el botón está presionado
       if (id === 'esc+') escalar(Math.pow(1.7, dt));
@@ -262,6 +334,10 @@
     world.add(contenedor);
     var empaques = [];                    // holders (grupo centrado en cada empaque)
     var mallasEmpaque = [];
+    var mallasExhibidor = [];             // partes fijas del exhibidor (sin vidrios): al apuntarlas aparece el panel
+    var slots = [];                       // casillas del exhibidor donde se acomodan los empaques
+    var GRAV = 9.8;
+    window.__vr = { empaques: empaques, slots: slots, camera: camera, THREE: THREE };   // para revisar el estado desde la consola
     var tmpBox = new THREE.Box3();
 
     var draco = new THREE.DRACOLoader();
@@ -350,6 +426,11 @@
       var llamadasDespues = 0;
       modelo.traverse(function (o) { if (o.isMesh) llamadasDespues++; });
       log('Mallas (llamadas de dibujo): ' + llamadasAntes + ' → ' + llamadasDespues);
+      modelo.traverse(function (o) {
+        if (!o.isMesh || /GLASS/.test((o.material && o.material.name) || '')) return;
+        for (var a = o.parent; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;
+        mallasExhibidor.push(o);
+      });
       modelo.updateMatrixWorld(true);
       var caja = new THREE.Box3().setFromObject(modelo);
       var size = caja.getSize(new THREE.Vector3());
@@ -403,10 +484,20 @@
           if (m.isMesh) { partes.push(m); mallasEmpaque.push(m); }
         });
         if (PROD === 'sin') { nodo.visible = false; partes.forEach(function () { mallasEmpaque.pop(); }); partes = []; }
+        // medidas del empaque (para apoyarlo plano en el piso) y su lugar en el exhibidor (casilla)
+        var dims = new THREE.Vector3(0.1, 0.1, 0.1);
+        if (partes.length) { partes[0].geometry.computeBoundingBox(); partes[0].geometry.boundingBox.getSize(dims); }
+        var ejeFino = dims.x <= dims.y && dims.x <= dims.z ? 0 : (dims.y <= dims.z ? 1 : 2);
         holder.userData = {
           esHolder: true, partes: partes, estado: 'reposo', padre: padre,
-          pos0: holder.position.clone(), quat0: holder.quaternion.clone(), esc0: holder.scale.clone()
+          pos0: holder.position.clone(), quat0: holder.quaternion.clone(), esc0: holder.scale.clone(),
+          dims: dims, ejeFino: ejeFino, espesor: dims.getComponent(ejeFino),
+          vel: new THREE.Vector3(), v: new THREE.Vector3(), omega: new THREE.Vector3(), pPrev: null,
+          contacto: false, qFlat: null, slot: null
         };
+        var casilla = { pos: holder.position.clone(), quat: holder.quaternion.clone(), scale: holder.scale.clone(), padre: padre, ocupado: holder };
+        holder.userData.slot = casilla; holder.userData.slotOrigen = casilla;
+        slots.push(casilla);
         empaques.push(holder);
       });
       log('Empaques sueltos: ' + empaques.length + (empaques.length ? '' : ' (no se encontraron)'), empaques.length === 0);
@@ -433,16 +524,76 @@
         if ('emissive' in m) { m.emissive.setHex(si ? 0x00e5c8 : 0x000000); m.emissiveIntensity = si ? 0.35 : 0; }
       });
     }
+    var vA = new THREE.Vector3(), vB = new THREE.Vector3(), qA = new THREE.Quaternion(), qB = new THREE.Quaternion();
+    var ARRIBA = new THREE.Vector3(0, 1, 0);
+
     function agarrar(holder, padreNuevo, posLocal) {
       var u = holder.userData;
       padreNuevo.attach(holder);
+      if (u.slot) { u.slot.ocupado = null; u.slot = null; }          // la casilla queda libre
       u.estado = 'agarrado'; u.destino = posLocal; u.escDestino = 1.8; u.agarradoPor = padreNuevo;
+      u.pPrev = null; u.vel.set(0, 0, 0);
+    }
+
+    // casilla libre más cercana al empaque (dentro del radio de acople), o null
+    function casillaCercana(holder) {
+      var piv = contenedor.userData.pivote;
+      var R = 0.22 * (piv ? piv.scale.x : 1);
+      var mejor = null, d2 = R * R;
+      holder.getWorldPosition(vA);
+      slots.forEach(function (s) {
+        if (s.ocupado) return;
+        vB.copy(s.pos); s.padre.localToWorld(vB);
+        var dd = vB.distanceToSquared(vA);
+        if (dd < d2) { d2 = dd; mejor = s; }
+      });
+      return mejor;
+    }
+    function acomodar(holder, casilla) {              // el empaque vuela a la casilla y queda ahí
+      var u = holder.userData;
+      casilla.ocupado = holder; u.slot = casilla; u.padre = casilla.padre;
+      u.pos0.copy(casilla.pos); u.quat0.copy(casilla.quat); u.esc0.copy(casilla.scale);
+      casilla.padre.attach(holder);
+      u.estado = 'regreso';
     }
     function soltar(holder) {
       var u = holder.userData;
-      u.padre.attach(holder);
-      u.estado = 'regreso'; u.agarradoPor = null;
+      u.agarradoPor = null;
       resaltar(holder, false);
+      var casilla = casillaCercana(holder);
+      if (casilla) { acomodar(holder, casilla); return; }
+      // lejos del exhibidor: cae al piso con el impulso que traía la mano
+      world.attach(holder);
+      u.estado = 'cayendo'; u.contacto = false; u.qFlat = null;
+      u.v.copy(u.vel).multiplyScalar(0.8);
+      if (u.v.length() > 3.5) u.v.setLength(3.5);
+      u.omega.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(6);
+    }
+    function devolverACasilla(holder) {               // si se pierde fuera del piso, vuelve al exhibidor
+      var u = holder.userData;
+      var c = (u.slotOrigen && !u.slotOrigen.ocupado) ? u.slotOrigen : null;
+      if (!c) slots.some(function (s) { if (!s.ocupado) { c = s; return true; } return false; });
+      if (c) acomodar(holder, c);
+    }
+
+    // casilla donde se acomodaría el empaque que tiene en la mano (vista previa tenue)
+    var fantasma = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0x00e5c8, transparent: true, opacity: 0.3, depthWrite: false }));
+    fantasma.matrixAutoUpdate = false; fantasma.visible = false;
+    scene.add(fantasma);
+    var mFant = new THREE.Matrix4(), mEsc = new THREE.Matrix4();
+    function actualizarFantasma() {
+      var casilla = null, dims = null;
+      for (var i = 0; i < empaques.length && !casilla; i++) {
+        var h = empaques[i];
+        if (h.userData.estado === 'agarrado') { casilla = casillaCercana(h); dims = h.userData.dims; }
+      }
+      if (!casilla) { fantasma.visible = false; return; }
+      mFant.compose(casilla.pos, casilla.quat, casilla.scale);
+      mFant.premultiply(casilla.padre.matrixWorld);
+      mFant.multiply(mEsc.makeScale(dims.x * 1.04, dims.y * 1.04, dims.z * 1.04));
+      fantasma.matrix.copy(mFant); fantasma.matrixWorldNeedsUpdate = true;
+      fantasma.visible = true;
     }
 
     function crearControl(i) {
@@ -462,7 +613,7 @@
         if (estado.agarrado || estado.boton) return;
         if (estado.hoverBoton) {                       // gatillo sobre un botón del panel
           estado.boton = estado.hoverBoton;
-          if (estado.boton === 'reset') reiniciar();
+          if (estado.boton === 'real') escalaReal();
           return;
         }
         if (estado.hover && estado.hover.userData.estado !== 'agarrado') {
@@ -491,11 +642,16 @@
           tmpMat.identity().extractRotation(c.matrixWorld);
           raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
           raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
-          var blancos = mallasEmpaque.concat([panel]);
+          var blancos = mallasEmpaque.concat(mallasExhibidor);
+          if (panel.visible) blancos.push(panel);
           var hits = raycaster.intersectObjects(blancos, false);
           if (hits.length) {
+            mostrarPanel();                                // apuntar al exhibidor, a un empaque o al panel lo mantiene visible
             if (hits[0].object === panel) {
               e.hoverBoton = botonEnUv(hits[0].uv);
+              largo = hits[0].distance;
+              e.punto.position.copy(hits[0].point); e.punto.visible = true;
+            } else if (mallasExhibidor.indexOf(hits[0].object) >= 0) {
               largo = hits[0].distance;
               e.punto.position.copy(hits[0].point); e.punto.visible = true;
             } else {
@@ -507,12 +663,13 @@
             }
           }
         }
-        if (!e.hover && !e.hoverBoton) e.punto.visible = false;
+        if (!e.hover && !e.hoverBoton && largo === 3) e.punto.visible = false;
         if (previo !== e.hover) { if (previo) resaltar(previo, false); if (e.hover) resaltar(e.hover, true); }
         e.rayo.scale.z = e.agarrado ? 0.5 : largo;
       });
       var hb = null, ab = null;
       controles.forEach(function (e) { if (e.hoverBoton && !hb) hb = e.hoverBoton; if (e.boton && !ab) ab = e.boton; });
+      if (ab) mostrarPanel();
       marcarBotones(hb, ab);
     }
 
@@ -520,6 +677,8 @@
     function animarEmpaques(dt) {
       var k = 1 - Math.exp(-12 * dt);
       var qId = new THREE.Quaternion();
+      var piv = contenedor.userData.pivote;
+      var escEx = piv ? piv.scale.x : 1;                       // los empaques sueltos acompañan la escala del exhibidor
       empaques.forEach(function (h) {
         var u = h.userData;
         if (u.estado === 'agarrado') {
@@ -527,6 +686,44 @@
           h.quaternion.slerp(qId, k);
           var s = h.scale.x + (u.escDestino * u.esc0.x - h.scale.x) * k;
           h.scale.setScalar(s);
+          // velocidad de la mano (para lanzar el empaque al soltarlo)
+          h.getWorldPosition(vA);
+          if (u.pPrev) { vB.copy(vA).sub(u.pPrev).divideScalar(Math.max(dt, 1e-3)); u.vel.lerp(vB, 0.35); }
+          else u.pPrev = new THREE.Vector3();
+          u.pPrev.copy(vA);
+        } else if (u.estado === 'cayendo' || u.estado === 'suelo') {
+          var se = h.scale.x + (escEx - h.scale.x) * k;
+          h.scale.setScalar(se);
+          var mitad = u.espesor * 0.5 * se;
+          if (u.estado === 'cayendo') {
+            u.v.y -= GRAV * dt;
+            h.position.addScaledVector(u.v, dt);
+            if (!u.contacto) {
+              var w = u.omega.length();
+              if (w > 1e-4) { qA.setFromAxisAngle(vA.copy(u.omega).divideScalar(w), w * dt); h.quaternion.premultiply(qA); }
+            }
+            if (h.position.y <= mitad) {
+              h.position.y = mitad;
+              if (!u.contacto) {                                 // primer golpe: se calcula cómo queda apoyado (cara ancha abajo)
+                u.contacto = true;
+                vA.set(0, 0, 0).setComponent(u.ejeFino, 1).applyQuaternion(h.quaternion);
+                qA.setFromUnitVectors(vA, vB.set(0, vA.y >= 0 ? 1 : -1, 0));
+                u.qFlat = qA.clone().multiply(h.quaternion);
+              }
+              u.v.y = Math.abs(u.v.y) > 0.6 ? -u.v.y * 0.25 : 0;
+              var fr = Math.exp(-5 * dt);
+              u.v.x *= fr; u.v.z *= fr;
+            }
+            if (u.contacto) {
+              h.quaternion.slerp(u.qFlat, 1 - Math.exp(-9 * dt));
+              if (u.v.y === 0 && Math.abs(u.v.x) + Math.abs(u.v.z) < 0.03 && h.quaternion.angleTo(u.qFlat) < 0.02) {
+                h.quaternion.copy(u.qFlat); u.v.set(0, 0, 0); u.estado = 'suelo';
+              }
+            }
+            if (h.position.y < -4) devolverACasilla(h);          // se salió del piso: vuelve al exhibidor
+          } else {
+            h.position.y = mitad;
+          }
         } else if (u.estado === 'regreso') {
           h.position.lerp(u.pos0, k);
           h.quaternion.slerp(u.quat0, k);
@@ -565,10 +762,10 @@
       if (!renderer.xr.isPresenting) {
         var r0 = dom.getBoundingClientRect();
         raycaster.setFromCamera(new THREE.Vector2(((e.clientX - r0.left) / r0.width) * 2 - 1, -((e.clientY - r0.top) / r0.height) * 2 + 1), camera);
-        var hp = raycaster.intersectObject(panel, false);
+        var hp = panel.visible ? raycaster.intersectObject(panel, false) : [];
         if (hp.length) {
           var idp = botonEnUv(hp[0].uv);
-          if (idp) { botonPantalla = idp; if (idp === 'reset') reiniciar(); marcarBotones(null, idp); return; }
+          if (idp) { botonPantalla = idp; if (idp === 'real') escalaReal(); marcarBotones(null, idp); return; }
         }
       }
       arrastrando = true; movido = false; px = e.clientX; py = e.clientY;
@@ -588,7 +785,15 @@
       if (hits.length) { sostenido = holderDe(hits[0].object); agarrar(sostenido, camera, new THREE.Vector3(0, 0, -0.7)); }
     });
     window.addEventListener('pointermove', function (e) {
-      if (!arrastrando) return;
+      if (!arrastrando) {                                   // en pantalla: el puntero sobre el exhibidor o el panel muestra el panel
+        if (renderer.xr.isPresenting) return;
+        var rm = dom.getBoundingClientRect();
+        raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rm.left) / rm.width) * 2 - 1, -((e.clientY - rm.top) / rm.height) * 2 + 1), camera);
+        var lista = mallasEmpaque.concat(mallasExhibidor);
+        if (panel.visible) lista.push(panel);
+        if (raycaster.intersectObjects(lista, false).length) mostrarPanel();
+        return;
+      }
       var dx = e.clientX - px, dy = e.clientY - py;
       if (Math.abs(dx) + Math.abs(dy) > 3) movido = true;
       px = e.clientX; py = e.clientY;
@@ -647,6 +852,10 @@
         if (teclas.d || teclas.ArrowRight) girar(-1.4 * dt);
       }
       animarEmpaques(dt);
+      actualizarFantasma();
+      if (botonPantalla) mostrarPanel();
+      panel.visible = performance.now() < panelHasta;
+      if (panel.visible) ubicarPanel();
       renderer.render(scene, camera);
     });
   })();
