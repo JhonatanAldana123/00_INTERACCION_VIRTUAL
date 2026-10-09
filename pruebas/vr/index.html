@@ -32,6 +32,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/DRACOLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/utils/BufferGeometryUtils.js"></script>
   <script>
   (function () {
     'use strict';
@@ -62,13 +63,18 @@
     log('navigator.xr: ' + (navigator.xr ? 'sí' : 'NO'));
 
     // ---------- escena ----------
-    var renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    // Ajustes de rendimiento por la dirección:  ?aa=0 (sin suavizado de bordes)  ?res=0.8 (menos resolución)  ?pbr=1 (materiales completos)
+    var AA = params.get('aa') !== '0';
+    var RES = parseFloat(params.get('res') || '1');
+    var PBR = params.get('pbr') === '1';
+    var renderer = new THREE.WebGLRenderer({ antialias: AA, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local');
-    if (renderer.xr.setFramebufferScaleFactor) renderer.xr.setFramebufferScaleFactor(0.9);
+    if (renderer.xr.setFramebufferScaleFactor) renderer.xr.setFramebufferScaleFactor(RES);
+    log('Suavizado: ' + (AA ? 'sí' : 'no') + ' · resolución VR: ' + RES + ' · materiales: ' + (PBR ? 'completos' : 'livianos'));
     document.body.insertBefore(renderer.domElement, document.body.firstChild);
 
     var scene = new THREE.Scene();
@@ -167,9 +173,87 @@
     draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/libs/draco/gltf/');
     var loader = new THREE.GLTFLoader();
     loader.setDRACOLoader(draco);
+    // ---- optimización en la carga: en el Go lo que más pesa son las llamadas de dibujo, no los triángulos ----
+    var anisotropia = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    function liviano(m) {                       // PBR -> Lambert (mucho más barato en el Go)
+      if (PBR || !m.isMeshStandardMaterial) return m.clone();
+      var n = new THREE.MeshLambertMaterial({
+        name: m.name, color: m.color.clone(), map: m.map, emissive: m.emissive.clone(), emissiveMap: m.emissiveMap,
+        emissiveIntensity: m.emissiveIntensity, transparent: m.transparent, opacity: m.opacity,
+        side: m.side, alphaTest: m.alphaTest, depthWrite: m.depthWrite
+      });
+      return n;
+    }
+    function afinar(m) { if (m.map) m.map.anisotropy = anisotropia; return m; }
+    // junta varias mallas (en el espacio local de 'raiz') en una sola; null si no se puede
+    function fusionar(partes, raiz) {
+      var inv = new THREE.Matrix4().copy(raiz.matrixWorld).invert();
+      var geos = [];
+      for (var i = 0; i < partes.length; i++) {
+        var p = partes[i];
+        var g = p.geometry.clone();
+        ['color', 'uv2', 'tangent'].forEach(function (a) { if (g.attributes[a]) g.deleteAttribute(a); });
+        var rel = new THREE.Matrix4().multiplyMatrices(inv, p.matrixWorld);
+        g.applyMatrix4(rel);
+        if (rel.determinant() < 0 && g.index) {          // espejo: se invierte el orden de los triángulos
+          var ix = g.index.array;
+          for (var t = 0; t < ix.length; t += 3) { var tmp = ix[t]; ix[t] = ix[t + 2]; ix[t + 2] = tmp; }
+        }
+        geos.push(g);
+      }
+      return THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false);
+    }
+
     loader.load(ARCHIVO, function (gltf) {
       var modelo = gltf.scene;
       modelo.scale.setScalar(ESCALA);
+      modelo.updateMatrixWorld(true);
+
+      // 1) nodos de empaque = padres de las partes con material "SELLO ROJO"
+      var nodosEmpaque = [];
+      modelo.traverse(function (o) {
+        if (!o.isMesh) return;
+        var nm = (o.material && o.material.name) || '';
+        var p = o.parent;
+        if (nm.indexOf('SELLO ROJO') >= 0 && p && p !== modelo && nodosEmpaque.indexOf(p) < 0) nodosEmpaque.push(p);
+      });
+      var llamadasAntes = 0;
+      modelo.traverse(function (o) { if (o.isMesh) llamadasAntes++; });
+
+      // 2) cada empaque (≈51 partes) pasa a UNA sola malla
+      nodosEmpaque.forEach(function (nodo) {
+        var partes = [];
+        nodo.traverse(function (o) { if (o.isMesh) partes.push(o); });
+        nodo.updateWorldMatrix(true, true);
+        var geo = partes.length > 1 ? fusionar(partes, nodo) : null;
+        if (!geo) return;
+        var mat = afinar(liviano(partes[0].material));
+        partes.forEach(function (p) { p.parent.remove(p); });
+        nodo.add(new THREE.Mesh(geo, mat));
+      });
+
+      // 3) el resto del exhibidor (estático) se junta por material
+      var grupos = {};
+      var ordenGrupos = [];
+      modelo.traverse(function (o) {
+        if (!o.isMesh) return;
+        for (var a = o.parent; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;   // ya son parte de un empaque
+        var id = o.material.uuid;
+        if (!grupos[id]) { grupos[id] = []; ordenGrupos.push(id); }
+        grupos[id].push(o);
+      });
+      ordenGrupos.forEach(function (id) {
+        var partes = grupos[id];
+        var mat = afinar(liviano(partes[0].material));
+        var geo = partes.length > 1 ? fusionar(partes, modelo) : null;
+        if (!geo) { partes.forEach(function (p) { p.material = mat; }); return; }
+        var m = new THREE.Mesh(geo, mat);
+        partes.forEach(function (p) { p.parent.remove(p); });
+        modelo.add(m);
+      });
+      var llamadasDespues = 0;
+      modelo.traverse(function (o) { if (o.isMesh) llamadasDespues++; });
+      log('Mallas (llamadas de dibujo): ' + llamadasAntes + ' → ' + llamadasDespues);
       modelo.updateMatrixWorld(true);
       var caja = new THREE.Box3().setFromObject(modelo);
       var size = caja.getSize(new THREE.Vector3());
@@ -188,14 +272,10 @@
 
       // Cada empaque del glb es un nodo con ~51 partes (todas con el material "SELLO ROJO")
       var triangulos = 0;
-      var nodosEmpaque = [];
       modelo.traverse(function (o) {
         if (!o.isMesh) return;
         var g = o.geometry;
         triangulos += (g.index ? g.index.count : g.attributes.position.count) / 3;
-        var nombreMat = (o.material && o.material.name) || '';
-        var p = o.parent;
-        if (nombreMat.indexOf('SELLO ROJO') >= 0 && p && p !== modelo && nodosEmpaque.indexOf(p) < 0) nodosEmpaque.push(p);
       });
       log('Triángulos totales: ' + Math.round(triangulos));
 
@@ -213,7 +293,7 @@
         holder.attach(nodo);
         var partes = [];
         nodo.traverse(function (m) {
-          if (m.isMesh) { m.material = m.material.clone(); partes.push(m); mallasEmpaque.push(m); }
+          if (m.isMesh) { partes.push(m); mallasEmpaque.push(m); }
         });
         holder.userData = {
           esHolder: true, partes: partes, estado: 'reposo', padre: padre,
