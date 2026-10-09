@@ -60,7 +60,7 @@
     var ARCHIVO = 'exhibidor.glb';
     var NOMBRE_EX = 'EXHIBIDOR 01';                       // título del panel: dice a cuál exhibidor pertenece
     var PANEL_TAMANO = parseFloat(params.get('panel') || '0.7');   // tamaño del panel de escala (1 = el anterior); ?panel=0.5 lo achica más
-    var VERSION = 'v13';                           // sube este número en cada cambio
+    var VERSION = 'v15';                         // sube este número en cada cambio
     // Productos para medir el rendimiento:  ?prod=caja (por defecto, caja roja liviana) · ?prod=real · ?prod=sin
     var PROD = params.get('prod') || 'real';
     var VIDRIO = params.get('vidrio') !== '0';            // ?vidrio=0 quita los vidrios del exhibidor
@@ -464,7 +464,20 @@
       var centro = caja.getCenter(new THREE.Vector3());
       modelo.position.set(-centro.x, -caja.min.y, -centro.z);
       var pivote = new THREE.Group();
+      if (cfg.podio) modelo.position.y += cfg.podio.alto;     // la pieza se apoya sobre el podio (cubo)
       pivote.add(modelo);
+      if (cfg.podio) {
+        var pw = cfg.podio.ancho, ph = cfg.podio.alto;
+        var podio = new THREE.Mesh(new THREE.BoxGeometry(pw, ph, pw), new THREE.MeshLambertMaterial({ color: 0x151b28 }));
+        podio.position.y = ph / 2;
+        podio.add(new THREE.LineSegments(new THREE.EdgesGeometry(podio.geometry), new THREE.LineBasicMaterial({ color: 0x00e5c8 })));
+        var tapa = new THREE.Mesh(new THREE.PlaneGeometry(pw * 0.94, pw * 0.94), new THREE.MeshLambertMaterial({ color: 0x232d48 }));
+        tapa.rotation.x = -Math.PI / 2; tapa.position.y = ph / 2 + 0.002;
+        podio.add(tapa);
+        podio.userData.ex = ex;
+        pivote.add(podio);
+        mallasExhibidor.push(podio);
+      }
       pivote.rotation.y = cfg.giro != null ? cfg.giro : GIRO;
       if (cfg.pos) pivote.position.set(cfg.pos[0], 0, cfg.pos[1]);
       else pivote.position.set(0, 0, -(Math.max(size.x, size.z) / 2 + 1.3));
@@ -538,7 +551,7 @@
         empaques.push(holder);
       });
       if (cfg.paquetes !== false) log('Empaques sueltos: ' + empaques.length + (empaques.length ? '' : ' (no se encontraron)'), empaques.length === 0);
-      estadoEl.textContent = exhibidores.length + ' de 2 exhibidores · ' +
+      estadoEl.textContent = exhibidores.length + ' exhibidores cargados · ' +
         (renderer.xr.isPresenting ? 'apunta con el mando' : 'arrastra para mirar, clic en un empaque');
     }, function (xhr) {
       if (xhr.total) estadoEl.textContent = 'Cargando ' + cfg.nombre + ' ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
@@ -550,6 +563,9 @@
     // Los frentes de los exhibidores miran al centro. Los brazos quedan a ~2,4 m del centro (borde frontal).
     cargarExhibidor({ archivo: 'isla.glb', nombre: 'ISLA 2X2', principal: false, paquetes: false, pos: [0, -3.5], giro: 0 });
     cargarExhibidor({ archivo: ARCHIVO, nombre: 'EXHIBIDOR 01', principal: true, paquetes: true, pos: [0, 2.6], giro: Math.PI });
+    // Derecha: la bandeja Yogo exhibida sobre un podio (cubo) tipo mesa, mirando al centro
+    cargarExhibidor({ archivo: 'bandeja.glb', nombre: 'BANDEJA YOGO', principal: false, paquetes: false, pos: [2.7, 0],
+      giro: -Math.PI / 2, podio: { ancho: 0.55, alto: 0.8 } });
 
     // ---------- interacción ----------
     var raycaster = new THREE.Raycaster();
