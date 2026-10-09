@@ -60,7 +60,7 @@
     var ARCHIVO = 'exhibidor.glb';
     var NOMBRE_EX = 'EXHIBIDOR 01';                       // título del panel: dice a cuál exhibidor pertenece
     var PANEL_TAMANO = parseFloat(params.get('panel') || '0.7');   // tamaño del panel de escala (1 = el anterior); ?panel=0.5 lo achica más
-    var VERSION = 'v15';                         // sube este número en cada cambio
+    var VERSION = 'v16';                        // sube este número en cada cambio
     // Productos para medir el rendimiento:  ?prod=caja (por defecto, caja roja liviana) · ?prod=real · ?prod=sin
     var PROD = params.get('prod') || 'real';
     var VIDRIO = params.get('vidrio') !== '0';            // ?vidrio=0 quita los vidrios del exhibidor
@@ -397,22 +397,111 @@
       return unida;
     }
 
+    // carga uno o varios .glb y avisa cuando están todos
+    function cargarVarios(archivos, ok, progreso, error) {
+      var res = [], pend = archivos.length, fallo = false;
+      archivos.forEach(function (a, i) {
+        loader.load(a, function (g) { res[i] = g; if (--pend === 0 && !fallo) ok(res); }, i === 0 ? progreso : undefined,
+          function (e) { fallo = true; if (error) error(e, a); });
+      });
+    }
     var exhibidores = [];
-    // cfg: { archivo, nombre, principal, paquetes, pos:[x,z], giro }
+    var mallasInstancias = [];            // mallas instanciadas (empaques repetidos de la isla): un solo dibujo para cientos de copias
+    var CERO = new THREE.Matrix4().makeScale(0, 0, 0);
+
+    // Empaques repetidos de la isla: una malla instanciada (1 dibujo para ~300 copias). Al apuntar uno se convierte en
+    // un empaque suelto normal (holder) para poder agarrarlo, y vuelve a ser parte de la instancia al dejarlo en su hueco.
+    function crearInstancias(ci, ex, modelo) {
+      var gltf = null, datos = null;
+      function fin() {
+        if (!gltf || !datos) return;
+        gltf.scene.updateMatrixWorld(true);
+        var partes = [];
+        gltf.scene.traverse(function (o) { if (o.isMesh) partes.push(o); });
+        var geo = partes.length > 1 ? fusionar(partes, gltf.scene) : partes[0].geometry.clone().applyMatrix4(partes[0].matrixWorld);
+        var mat = afinar(liviano(partes[0].material));
+        geo.computeBoundingBox();
+        var dims = geo.boundingBox.getSize(new THREE.Vector3());
+        var n = datos.n;
+        var inst = new THREE.InstancedMesh(geo, mat, n);
+        inst.frustumCulled = false;
+        var misSlots = [], m4 = new THREE.Matrix4();
+        for (var i = 0; i < n; i++) {
+          m4.fromArray(datos.matrices[i]);
+          inst.setMatrixAt(i, m4);
+          var s = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(), padre: modelo,
+            ocupado: 'instancia', ex: ex, inst: inst, id: i, matriz: m4.clone() };
+          m4.decompose(s.pos, s.quat, s.scale);
+          misSlots.push(s); slots.push(s);
+        }
+        inst.instanceMatrix.needsUpdate = true;
+        inst.userData = { ex: ex, slots: misSlots, geo: geo, mat: mat, dims: dims };
+        modelo.add(inst);
+        mallasInstancias.push(inst);
+        log(ex.nombre + ': ' + n + ' empaques instanciados (1 dibujo, ' + Math.round((geo.index ? geo.index.count : geo.attributes.position.count) / 3) + ' triángulos c/u)');
+      }
+      cargarVarios([ci.archivo], function (g) { gltf = g[0]; fin(); }, undefined, function () { log('No se pudo cargar ' + ci.archivo, true); });
+      fetch(ci.datos).then(function (r) { return r.json(); }).then(function (d) { datos = d; fin(); })
+        .catch(function () { log('No se pudo leer ' + ci.datos, true); });
+    }
+    function promover(inst, id) {              // la copia pasa a ser un empaque suelto agarrable
+      var u0 = inst.userData, slot = u0.slots[id];
+      if (slot.ocupado !== 'instancia') return slot.ocupado && slot.ocupado.isObject3D ? slot.ocupado : null;
+      var mesh = new THREE.Mesh(u0.geo, u0.mat.clone());
+      var holder = new THREE.Group();
+      holder.position.copy(slot.pos); holder.quaternion.copy(slot.quat); holder.scale.copy(slot.scale);
+      holder.add(mesh);
+      slot.padre.add(holder);
+      var d = u0.dims;
+      var eje = d.x <= d.y && d.x <= d.z ? 0 : (d.y <= d.z ? 1 : 2);
+      holder.userData = {
+        esHolder: true, ex: u0.ex, partes: [mesh], estado: 'reposo', padre: slot.padre, instancia: true,
+        pos0: slot.pos.clone(), quat0: slot.quat.clone(), esc0: slot.scale.clone(),
+        dims: d, ejeFino: eje, espesor: d.getComponent(eje),
+        vel: new THREE.Vector3(), v: new THREE.Vector3(), omega: new THREE.Vector3(), pPrev: null,
+        contacto: false, qFlat: null, slot: slot, slotOrigen: slot
+      };
+      slot.ocupado = holder;
+      inst.setMatrixAt(id, CERO); inst.instanceMatrix.needsUpdate = true;
+      empaques.push(holder); mallasEmpaque.push(mesh);
+      return holder;
+    }
+    function degradar(holder) {                // vuelve a ser una copia de la malla instanciada
+      var u = holder.userData, slot = u.slot;
+      slot.ocupado = 'instancia';
+      slot.inst.setMatrixAt(slot.id, slot.matriz); slot.inst.instanceMatrix.needsUpdate = true;
+      if (holder.parent) holder.parent.remove(holder);
+      var i = empaques.indexOf(holder); if (i >= 0) empaques.splice(i, 1);
+      u.partes.forEach(function (p) { var k = mallasEmpaque.indexOf(p); if (k >= 0) mallasEmpaque.splice(k, 1); p.material.dispose(); });
+    }
+    function holderDeImpacto(h) { return h.object.isInstancedMesh ? promover(h.object, h.instanceId) : holderDe(h.object); }
+    function limpiarInstancias() {             // cada cuadro: los empaques en su hueco que nadie apunta ni sostiene vuelven a la instancia
+      for (var i = empaques.length - 1; i >= 0; i--) {
+        var h = empaques[i], u = h.userData;
+        if (!u.instancia || u.estado !== 'reposo' || !u.slot || h === sostenido) continue;
+        var enUso = controles.some(function (e) { return e.hover === h || e.agarrado === h; });
+        if (!enUso) degradar(h);
+      }
+    }
+    // cfg: { archivo | archivos, nombre, principal, paquetes, empaqueMaterial, empaquePorMalla, instancias, pos:[x,z], giro, podio }
     function cargarExhibidor(cfg) {
     var ex = { nombre: cfg.nombre, pivote: null };
-    loader.load(cfg.archivo, function (gltf) {
-      var modelo = gltf.scene;
+    cargarVarios(cfg.archivos || [cfg.archivo], function (gltfs) {
+      var modelo;
+      if (gltfs.length === 1) modelo = gltfs[0].scene;
+      else { modelo = new THREE.Group(); gltfs.forEach(function (g) { modelo.add(g.scene); }); }
       modelo.scale.setScalar(cfg.principal ? ESCALA : 1);
       modelo.updateMatrixWorld(true);
 
-      // 1) nodos de empaque = padres de las partes con material "SELLO ROJO" (solo si el exhibidor tiene empaques sueltos)
+      // 1) nodos de empaque (solo si el exhibidor tiene empaques sueltos): el nodo que agrupa las partes del material,
+      //    o la propia malla si cada empaque es una sola pieza (cfg.empaquePorMalla)
       var nodosEmpaque = [];
+      var matEmpaque = cfg.empaqueMaterial || 'SELLO ROJO';
       modelo.traverse(function (o) {
         if (!o.isMesh || cfg.paquetes === false) return;
         var nm = (o.material && o.material.name) || '';
-        var p = o.parent;
-        if (nm.indexOf('SELLO ROJO') >= 0 && p && p !== modelo && nodosEmpaque.indexOf(p) < 0) nodosEmpaque.push(p);
+        var obj = cfg.empaquePorMalla ? o : o.parent;
+        if (nm.indexOf(matEmpaque) >= 0 && obj && obj !== modelo && obj !== gltfs[0].scene && nodosEmpaque.indexOf(obj) < 0) nodosEmpaque.push(obj);
       });
       var llamadasAntes = 0;
       modelo.traverse(function (o) { if (o.isMesh) llamadasAntes++; });
@@ -422,6 +511,10 @@
         var partes = [];
         nodo.traverse(function (o) { if (o.isMesh) partes.push(o); });
         nodo.updateWorldMatrix(true, true);
+        if (partes.length === 1) {                    // empaque de una sola pieza: material propio (para resaltarlo solo a él)
+          partes[0].material = afinar(liviano(partes[0].material));
+          return;
+        }
         var geo = partes.length > 1 ? fusionar(partes, nodo) : null;
         if (!geo) return;
         var mat = afinar(liviano(partes[0].material));
@@ -434,7 +527,7 @@
       var ordenGrupos = [];
       modelo.traverse(function (o) {
         if (!o.isMesh) return;
-        for (var a = o.parent; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;   // ya son parte de un empaque
+        for (var a = o; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;   // ya son parte de un empaque
         var id = o.material.uuid;
         if (!grupos[id]) { grupos[id] = []; ordenGrupos.push(id); }
         grupos[id].push(o);
@@ -454,7 +547,7 @@
       log(cfg.nombre + ' · mallas (llamadas de dibujo): ' + llamadasAntes + ' → ' + llamadasDespues);
       modelo.traverse(function (o) {
         if (!o.isMesh || /GLASS/.test((o.material && o.material.name) || '')) return;
-        for (var a = o.parent; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;
+        for (var a = o; a; a = a.parent) if (nodosEmpaque.indexOf(a) >= 0) return;
         o.userData.ex = ex;
         mallasExhibidor.push(o);
       });
@@ -545,26 +638,30 @@
           vel: new THREE.Vector3(), v: new THREE.Vector3(), omega: new THREE.Vector3(), pPrev: null,
           contacto: false, qFlat: null, slot: null
         };
-        var casilla = { pos: holder.position.clone(), quat: holder.quaternion.clone(), scale: holder.scale.clone(), padre: padre, ocupado: holder };
+        var casilla = { pos: holder.position.clone(), quat: holder.quaternion.clone(), scale: holder.scale.clone(), padre: padre, ocupado: holder, ex: ex };
         holder.userData.slot = casilla; holder.userData.slotOrigen = casilla;
         slots.push(casilla);
         empaques.push(holder);
       });
-      if (cfg.paquetes !== false) log('Empaques sueltos: ' + empaques.length + (empaques.length ? '' : ' (no se encontraron)'), empaques.length === 0);
+      if (cfg.instancias) crearInstancias(cfg.instancias, ex, modelo);
+      if (cfg.paquetes !== false) log(cfg.nombre + ' · empaques sueltos: ' + nodosEmpaque.length + (nodosEmpaque.length ? '' : ' (no se encontraron)'), nodosEmpaque.length === 0);
       estadoEl.textContent = exhibidores.length + ' exhibidores cargados · ' +
         (renderer.xr.isPresenting ? 'apunta con el mando' : 'arrastra para mirar, clic en un empaque');
     }, function (xhr) {
       if (xhr.total) estadoEl.textContent = 'Cargando ' + cfg.nombre + ' ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
-    }, function (e) { log('No se pudo cargar ' + cfg.archivo + ': ' + (e && e.message ? e.message : e), true); });
+    }, function (e, archivo) { log('No se pudo cargar ' + (archivo || cfg.archivo) + ': ' + (e && e.message ? e.message : e), true); });
     }
 
     // Distribución en cruz vista desde arriba, con la persona en el centro (0, 0):
     //   adelante (lado del logo): ISLA 2X2 · atrás: EXHIBIDOR 01 · izquierda y derecha: pendientes
     // Los frentes de los exhibidores miran al centro. Los brazos quedan a ~2,4 m del centro (borde frontal).
-    cargarExhibidor({ archivo: 'isla.glb', nombre: 'ISLA 2X2', principal: false, paquetes: false, pos: [0, -3.5], giro: 0 });
+    // La isla: estructura + acrílico simplificados y sus ~316 empaques como UNA malla instanciada (agarrables uno a uno)
+    cargarExhibidor({ archivos: ['isla_resto.glb', 'isla_acrilico.glb'], nombre: 'ISLA 2X2', principal: false, paquetes: false,
+      instancias: { archivo: 'isla_pack.glb', datos: 'isla_packs.json' }, pos: [0, -3.5], giro: 0 });
     cargarExhibidor({ archivo: ARCHIVO, nombre: 'EXHIBIDOR 01', principal: true, paquetes: true, pos: [0, 2.6], giro: Math.PI });
     // Derecha: la bandeja Yogo exhibida sobre un podio (cubo) tipo mesa, mirando al centro
-    cargarExhibidor({ archivo: 'bandeja.glb', nombre: 'BANDEJA YOGO', principal: false, paquetes: false, pos: [2.7, 0],
+    cargarExhibidor({ archivo: 'bandeja.glb', nombre: 'BANDEJA YOGO', principal: false, paquetes: true,
+      empaqueMaterial: 'PRODUCTO BIEN', empaquePorMalla: true, pos: [2.7, 0],
       giro: -Math.PI / 2, podio: { ancho: 0.55, alto: 0.8 } });
 
     // ---------- interacción ----------
@@ -602,7 +699,7 @@
       var mejor = null, d2 = R * R;
       holder.getWorldPosition(vA);
       slots.forEach(function (s) {
-        if (s.ocupado) return;
+        if (s.ocupado || s.ex !== holder.userData.ex) return;       // solo casillas libres de su propio exhibidor
         vB.copy(s.pos); s.padre.localToWorld(vB);
         var dd = vB.distanceToSquared(vA);
         if (dd < d2) { d2 = dd; mejor = s; }
@@ -702,7 +799,7 @@
           tmpMat.identity().extractRotation(c.matrixWorld);
           raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
           raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
-          var blancos = mallasEmpaque.concat(mallasExhibidor);
+          var blancos = mallasEmpaque.concat(mallasExhibidor, mallasInstancias);
           if (panel.visible) blancos.push(panel);
           var hits = raycaster.intersectObjects(blancos, false);
           if (hits.length) {
@@ -711,6 +808,13 @@
               e.hoverBoton = botonEnUv(hits[0].uv);
               largo = hits[0].distance;
               e.punto.position.copy(hits[0].point); e.punto.visible = true;
+            } else if (hits[0].object.isInstancedMesh) {
+              var hh = promover(hits[0].object, hits[0].instanceId);
+              if (hh && hh.userData.estado !== 'agarrado') {
+                elegirExhibidor(hh.userData.ex);
+                e.hover = hh; largo = hits[0].distance;
+                e.punto.position.copy(hits[0].point); e.punto.visible = true;
+              }
             } else if (mallasExhibidor.indexOf(hits[0].object) >= 0) {
               elegirExhibidor(hits[0].object.userData.ex);
               largo = hits[0].distance;
@@ -855,21 +959,25 @@
       var r = dom.getBoundingClientRect();
       var ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
-      var hits = raycaster.intersectObjects(mallasEmpaque, false);
-      if (hits.length) { sostenido = holderDe(hits[0].object); agarrar(sostenido, camera, new THREE.Vector3(0, 0, -0.7)); }
+      var hits = raycaster.intersectObjects(mallasEmpaque.concat(mallasInstancias), false);
+      if (hits.length) {
+        sostenido = holderDeImpacto(hits[0]);
+        if (sostenido) agarrar(sostenido, camera, new THREE.Vector3(0, 0, -0.7));
+      }
     });
     window.addEventListener('pointermove', function (e) {
       if (!arrastrando) {                                   // en pantalla: el puntero sobre el exhibidor o el panel muestra el panel
         if (renderer.xr.isPresenting) return;
         var rm = dom.getBoundingClientRect();
         raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rm.left) / rm.width) * 2 - 1, -((e.clientY - rm.top) / rm.height) * 2 + 1), camera);
-        var lista = mallasEmpaque.concat(mallasExhibidor);
+        var lista = mallasEmpaque.concat(mallasExhibidor, mallasInstancias);
         if (panel.visible) lista.push(panel);
         var hm = raycaster.intersectObjects(lista, false);
         if (hm.length) {
           mostrarPanel();
           var ob = hm[0].object;
           if (ob !== panel) elegirExhibidor(ob.userData.ex || (holderDe(ob) && holderDe(ob).userData.ex));
+          // en pantalla, apuntar a una copia instanciada la deja lista para agarrar y se limpia al alejar el puntero
         }
         return;
       }
@@ -930,6 +1038,7 @@
         if (teclas.a || teclas.ArrowLeft) girar(1.4 * dt);
         if (teclas.d || teclas.ArrowRight) girar(-1.4 * dt);
       }
+      limpiarInstancias();
       animarEmpaques(dt);
       actualizarFantasma();
       if (botonPantalla) mostrarPanel();
