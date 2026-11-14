@@ -94,6 +94,23 @@
       left: 4vw; width: 92vw; height: auto; max-height: 70vh; top: 50%; bottom: auto; transform: translateY(-50%);
       opacity: 1; z-index: 25; border-radius: 12px; border: 3px solid #fff; box-shadow: 0 10px 40px rgba(0,0,0,.5); background: #000;
     }
+    .panel {
+      position: fixed; right: 10px; top: calc(max(env(safe-area-inset-top, 0px), 12px) + 44px); z-index: 45; width: min(280px, 80vw);
+      background: rgba(0,0,0,.78); border: 1px solid rgba(255,255,255,.25); border-radius: 14px; padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 10px; font-size: 12px;
+    }
+    .panel label { display: flex; flex-direction: column; gap: 4px; }
+    .panel b { color: var(--verde); }
+    .panel input { width: 100%; }
+    .panel small { opacity: .7; line-height: 1.35; }
+    /* Celular acostado: tarjeta y video caben más grandes, así que la guía también crece */
+    @media (orientation: landscape) {
+      .guia { gap: 10px; }
+      .guia .marco { width: 36vh; max-width: none; }
+      .guia .fantasma { width: 45vh; max-width: none; }
+      .abajo { padding-top: 20px; }
+      .inicio { gap: 10px; padding: 16px; }
+    }
     .pista {
       position: fixed; left: 50%; transform: translateX(-50%); top: calc(max(env(safe-area-inset-top, 0px), 12px) + 34px); z-index: 31;
       background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.25); padding: 8px 14px; border-radius: 100px;
@@ -110,7 +127,7 @@
   <div class="inicio" id="inicio">
     <span class="etiqueta">INNERCIA · REALIDAD AUMENTADA</span>
     <h1>Mira lo que trae<br>esta tarjeta</h1>
-    <p>Permite el uso de la cámara y apunta a la tarjeta para ver la presentación.</p>
+    <p>Permite el uso de la cámara y apunta a la tarjeta para ver la presentación.<br><small>Con el celular acostado se ve más grande.</small></p>
     <button class="principal" id="comenzar">Comenzar</button>
     <button class="enlace" id="sinTarjeta">No tengo la tarjeta a la mano</button>
   </div>
@@ -126,7 +143,18 @@
 
   <div class="arriba" id="arriba" hidden>
     <span class="marca"><b>INNERCIA</b> · AR</span>
-    <button class="secundario" id="sonido" hidden>Activar sonido</button>
+    <span>
+      <button class="secundario" id="sonido" hidden>Activar sonido</button>
+      <button class="secundario" id="calibrar">Calibrar</button>
+    </span>
+  </div>
+
+  <!-- Panel de calibración (solo en esta página de prueba): se mueve mirando la tarjeta y se anotan los números -->
+  <div class="panel" id="panel" hidden>
+    <label>Firmeza de posición <b id="vPos"></b><input type="range" id="rPos" min="0" max="400" step="10"></label>
+    <label>Firmeza de giro <b id="vGiro"></b><input type="range" id="rGiro" min="0" max="600" step="10"></label>
+    <label>Ignorar giros bruscos de más de <b id="vSalto"></b><input type="range" id="rSalto" min="5" max="90" step="5"></label>
+    <small>Más a la derecha = más firme pero más lento al mover. Anota los tres números que mejor se vean.</small>
   </div>
 
   <div class="abajo" id="abajo" hidden>
@@ -152,7 +180,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261114c';
+    const VERSION = '20261114d';
     const params_ = n => new URLSearchParams(location.search).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
     const ANCHO_M = 0.045;
@@ -439,26 +467,39 @@
     const soporte = new THREE.Group();
     let anclaGrupo = null, tUltimaVista = 0;
     const AGUANTE_MS = 700;       // cuánto se queda el contenido en su sitio si la tarjeta se pierde un momento
-    // Más bajo = más firme pero más lento al mover la tarjeta. ?suave=0.5 lo hace más firme, ?suave=2 más ágil
-    const AJUSTE = parseFloat(params_('suave')) || 1;
-    const SUAVE_POS = 40 * AJUSTE, SUAVE_GIRO = 15 * AJUSTE;
+    // Calibración (se ajusta en vivo con el botón «Calibrar»; también ?pos=120&giro=220&salto=25)
+    const cal = {
+      pos: parseFloat(params_('pos')) || 120,       // ms de retraso de la posición: más = más firme, menos = más ágil
+      giro: parseFloat(params_('giro')) || 220,     // ms de retraso del giro
+      salto: parseFloat(params_('salto')) || 25,    // grados: giros bruscos mayores a esto se ignoran un instante
+    };
     const pNueva = new THREE.Vector3(), qNueva = new THREE.Quaternion(), sNueva = new THREE.Vector3();
     const pSuave = new THREE.Vector3(), qSuave = new THREE.Quaternion();
-    let hayPose = false;
+    let hayPose = false, tSalto = 0, tCuadro = 0;
     function cuadro() {
       const ahora = performance.now();
+      const dt = Math.min(100, ahora - (tCuadro || ahora));
+      tCuadro = ahora;
       if (!modoDemo && anclaGrupo) {
         if (anclaGrupo.visible) {
-          // Antivibración: si la tarjeta casi no se movió (temblor), el contenido se acerca despacio a la nueva
-          // posición; si se movió de verdad, la sigue de inmediato. El giro se suaviza aparte porque un temblor
-          // mínimo de ángulo se nota mucho en el video, que está lejos del centro de la tarjeta.
+          // Antivibración. El contenido persigue a la tarjeta con un retraso fijo y corto (cal.pos / cal.giro, en
+          // milisegundos): movimiento continuo, sin frenar ni soltar de golpe (eso era lo que se veía como saltos).
+          // El giro va aparte y más lento: un temblor mínimo de ángulo se nota mucho en el video, lejos del centro.
+          // Además se descartan las lecturas «locas»: si de un cuadro a otro la tarjeta aparece girada más de
+          // cal.salto grados, se espera un cuarto de segundo antes de creerle (suele ser un error de un instante).
           anclaGrupo.matrix.decompose(pNueva, qNueva, sNueva);
-          if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) { pSuave.copy(pNueva); qSuave.copy(qNueva); hayPose = true; }
+          if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) { pSuave.copy(pNueva); qSuave.copy(qNueva); hayPose = true; tSalto = 0; }
           else {
-            const aP = THREE.MathUtils.clamp(pSuave.distanceTo(pNueva) / pNueva.length() * SUAVE_POS, 0.1, 1);
-            const aQ = THREE.MathUtils.clamp(qSuave.angleTo(qNueva) * SUAVE_GIRO, 0.08, 1);
-            pSuave.lerp(pNueva, aP);
-            qSuave.slerp(qNueva, aQ);
+            const grados = THREE.MathUtils.radToDeg(qSuave.angleTo(qNueva));
+            const tramo = pSuave.distanceTo(pNueva) / pNueva.length();
+            const esSalto = grados > cal.salto || tramo > 0.3;
+            if (esSalto && !tSalto) tSalto = ahora;
+            if (!esSalto) tSalto = 0;
+            if (!esSalto || ahora - tSalto > 250) {
+              // Si la tarjeta se mueve de verdad, el retraso se acorta poco a poco (nunca de golpe)
+              pSuave.lerp(pNueva, 1 - Math.exp(-dt / (cal.pos / (1 + tramo * 30))));
+              qSuave.slerp(qNueva, 1 - Math.exp(-dt / (cal.giro / (1 + grados / 4))));
+            }
           }
           soporte.matrix.compose(pSuave, qSuave, sNueva);
           soporte.matrixWorldNeedsUpdate = true;
@@ -523,6 +564,36 @@
         iniciarDemo();
       }
     }
+
+    // ── Girar el celular ────────────────────────────────────────────────────────────────────────
+    // La cámara entrega otra imagen (acostada o parada): el seguimiento se reinicia para tomar la nueva medida.
+    // El video y el estado siguen como iban.
+    let acostado = innerWidth > innerHeight, girando = false;
+    addEventListener('resize', async () => {
+      const ahora = innerWidth > innerHeight;
+      if (ahora === acostado) return;
+      acostado = ahora;
+      if (!mindar || modoDemo || girando || estado === 'inicio' || estado === 'ar') return;
+      girando = true;
+      try {
+        renderer.setAnimationLoop(null);
+        mindar.stop();
+        await new Promise(ok => setTimeout(ok, 350));      // el navegador termina de girar
+        await mindar.start();
+        hayPose = false; visible = false;
+        renderer.setAnimationLoop(cuadro);
+      } catch (e) { console.error(e); location.reload(); }
+      girando = false;
+    });
+
+    // ── Calibración en vivo ─────────────────────────────────────────────────────────────────────
+    const controles = [['rPos', 'vPos', 'pos', ' ms'], ['rGiro', 'vGiro', 'giro', ' ms'], ['rSalto', 'vSalto', 'salto', '°']];
+    for (const [r, v, clave, unidad] of controles) {
+      $(r).value = cal[clave];
+      $(v).textContent = cal[clave] + unidad;
+      $(r).oninput = () => { cal[clave] = Math.max(1, parseFloat($(r).value)); $(v).textContent = $(r).value + unidad; };
+    }
+    $('calibrar').onclick = () => { $('panel').hidden = !$('panel').hidden; };
 
     $('comenzar').onclick = () => comenzar(params.has('demo'));
     $('sinTarjeta').onclick = () => comenzar(true);
