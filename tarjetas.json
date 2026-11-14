@@ -1,0 +1,7 @@
+{
+  "_nota": "Qué abre cada tarjeta impresa. El QR de la tarjeta 1 siempre dice innerciaar.com/t/1; aquí se decide la pieza (coleccion y pieza, como en colecciones.json), el nombre que ve el cliente y la dirección que queda en la barra del navegador. Después de cambiar algo: doble clic en ActualizarTarjetas.bat y publicar. No hay que reimprimir.",
+  "1": { "coleccion": "alpina", "pieza": "01-bandeja-yogo",   "nombre": "Alpina · Bandeja Yogo",     "direccion": "alpina/Bandeja" },
+  "2": { "coleccion": "alpina", "pieza": "01-exhibidor-yogo", "nombre": "Alpina · Exhibidor Yogo",   "direccion": "alpina/Exhibidor" },
+  "3": { "coleccion": "oliza",  "pieza": "shipper",           "nombre": "Oliza · Shipper",           "direccion": "oliza/Shipper-AR" },
+  "4": { "coleccion": "oliza",  "pieza": "minishipper-mixto", "nombre": "Oliza · Minishipper Mixto", "direccion": "oliza/Minishipper" }
+}

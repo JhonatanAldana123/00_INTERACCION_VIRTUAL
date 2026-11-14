@@ -125,7 +125,7 @@
   <model-viewer id="mv" ar ar-modes="scene-viewer quick-look" ar-usdz-max-texture-size="1024" loading="eager" reveal="auto"></model-viewer>
 
   <div class="inicio" id="inicio">
-    <span class="etiqueta">INNERCIA · REALIDAD AUMENTADA</span>
+    <span class="etiqueta" id="etiquetaInicio">INNERCIA · REALIDAD AUMENTADA</span>
     <h1>Mira lo que trae<br>esta tarjeta</h1>
     <p>Permite el uso de la cámara y apunta a la tarjeta para ver la presentación.<br><small>Con el celular acostado se ve más grande.</small></p>
     <button class="principal" id="comenzar">Comenzar</button>
@@ -142,7 +142,7 @@
   </div>
 
   <div class="arriba" id="arriba" hidden>
-    <span class="marca"><b>INNERCIA</b> · AR</span>
+    <span class="marca" id="marca"><b>INNERCIA</b> · AR</span>
     <span>
       <button class="secundario" id="sonido" hidden>Activar sonido</button>
       <button class="secundario" id="calibrar">Calibrar</button>
@@ -154,7 +154,8 @@
     <label>Firmeza de posición <b id="vPos"></b><input type="range" id="rPos" min="0" max="400" step="10"></label>
     <label>Firmeza de giro <b id="vGiro"></b><input type="range" id="rGiro" min="0" max="600" step="10"></label>
     <label>Ignorar giros bruscos de más de <b id="vSalto"></b><input type="range" id="rSalto" min="5" max="90" step="5"></label>
-    <small>Más a la derecha = más firme pero más lento al mover. Anota los tres números que mejor se vean.</small>
+    <label>Anticipo al mover o girar <b id="vAdel"></b><input type="range" id="rAdel" min="0" max="150" step="5"></label>
+    <small>Firmeza: más a la derecha = más quieto con la tarjeta quieta. Anticipo: súbelo si al girar el contenido llega tarde; bájalo si se pasa de largo. Anota los cuatro números que mejor se vean.</small>
   </div>
 
   <div class="abajo" id="abajo" hidden>
@@ -180,8 +181,9 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261114e';
-    const params_ = n => new URLSearchParams(location.search).get(n);
+    const VERSION = '20261114k';
+    const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
+    const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
     const ANCHO_M = 0.045;
     const ALTO = 1775 / 1000;       // proporción de tarjeta.png
@@ -191,6 +193,35 @@
     const params = new URLSearchParams(location.search);
     const RAIZ = new URL('../../', location.href);          // raíz del sitio (colecciones.json, models/)
     const $ = id => document.getElementById(id);
+
+    // ── Tarjeta impresa ─────────────────────────────────────────────────────────────────────────
+    // ?t=1 … número de la tarjeta: /tarjetas.json dice qué pieza abre, con qué nombre y qué dirección
+    // se ve en la barra del navegador (innerciaar.com/Ramo/Exh). Todo se cambia sin reimprimir.
+    const tarjetaLista = (async () => {
+      if (!params.get('t')) return {};
+      let t = {};
+      try { t = (await (await fetch(new URL('tarjetas.json', RAIZ), { cache: 'no-cache' })).json())[params.get('t')] || {}; }
+      catch (e) { console.warn('tarjetas.json', e); }
+      if (t.nombre) {
+        document.title = t.nombre + ' · Innercia AR';
+        $('etiquetaInicio').textContent = t.nombre;
+        $('marca').innerHTML = '';
+        $('marca').append(Object.assign(document.createElement('b'), { textContent: t.nombre }), ' · AR');
+      }
+      if (t.direccion) {
+        try {
+          const visible = new URL(encodeURI(t.direccion.replace(/^\/+|\/+$/g, '')), RAIZ);
+          // Solo si esa página existe (la crea scripts/generar-tarjetas.js): así recargar nunca da error
+          if ((await fetch(visible.href + '/', { method: 'HEAD', cache: 'no-cache' })).ok) {
+            // <base> deja los archivos de esta carpeta (tarjeta.mind, video.mp4…) donde están
+            document.head.prepend(Object.assign(document.createElement('base'), { href: new URL('.', location.href).href }));
+            const resto = new URLSearchParams(BUSQUEDA); resto.delete('t');
+            history.replaceState(null, '', visible.pathname + (resto.size ? '?' + resto : ''));
+          }
+        } catch (e) { console.warn('dirección visible', e); }
+      }
+      return t;
+    })();
     const escena = $('escena'), video = $('video'), mv = $('mv');
 
     let estado = 'inicio';        // inicio → buscando → video → pieza   (ar = fuera, en el AR del celular)
@@ -205,16 +236,17 @@
     // ── Presentación por etapas ─────────────────────────────────────────────────────────────────
     // Cada panel se ubica por su esquina SUPERIOR IZQUIERDA (x, y) y su ancho, medidos en «anchos de tarjeta»
     // desde el centro de la tarjeta (la tarjeta va de x −0.5 a 0.5, y de y +ALTO/2 arriba a −ALTO/2 abajo).
-    //   entra   = segundo en que aparece, contado desde que arranca el video
+    //   entra   = segundo en que aparece, contado desde que se reconoce la tarjeta. Orden pedido: logo → quiénes
+    //             somos → video → servicios. El video empieza a reproducirse en su propio segundo, no antes.
     //   entrada = 'derecha' (sale de detrás de la tarjeta) · 'abajo' (se despliega como persiana) · 'aparecer'
     // Para cambiar un panel basta reemplazar su imagen (PNG con transparencia) con el mismo nombre.
     const PEGADO = 0.03;                       // separación entre la tarjeta y el video
-    const altoVideo = () => PANELES[0].caja ? PANELES[0].caja.h : 1.25 * 9 / 16;
+    const altoVideo = () => PANELES[0].caja ? PANELES[0].caja.h : PANELES[0].ancho * 9 / 16;
     const PANELES = [
-      { id: 'video',     video: true,                   x: 0.5 + PEGADO, y: ALTO / 2,                            ancho: 1.25, entra: 0,   entrada: 'derecha', opacidad: OPACIDAD },
-      { id: 'logo',      imagen: 'panel-logo.png',      x: -0.5,         y: ALTO / 2 + 0.38,                     ancho: 1.0,  entra: 2.5, entrada: 'aparecer' },
-      { id: 'quienes',   imagen: 'panel-quienes.png',   x: -0.1,         y: -ALTO / 2 + 0.1,                     ancho: 1.7,  entra: 4.5, entrada: 'abajo' },
-      { id: 'servicios', imagen: 'panel-servicios.png', x: 0.5 + PEGADO, y: () => ALTO / 2 - altoVideo() - 0.09, ancho: 1.25, entra: 6.5, entrada: 'abajo' },
+      { id: 'video',     video: true,                   x: 0.5 + PEGADO, y: ALTO / 2,                            ancho: 1.8,  entra: 4, entrada: 'derecha', opacidad: OPACIDAD },
+      { id: 'logo',      imagen: 'panel-logo.png',      x: -0.5,         y: ALTO / 2 + 0.38,                     ancho: 1.0,  entra: 0,   entrada: 'aparecer' },
+      { id: 'quienes',   imagen: 'panel-quienes.png',   x: -0.1,         y: -ALTO / 2 + 0.1,                     ancho: 1.7,  entra: 2,   entrada: 'abajo' },
+      { id: 'servicios', imagen: 'panel-servicios.png', x: 0.5 + PEGADO, y: () => ALTO / 2 - altoVideo() - 0.09, ancho: 1.25, entra: 6,   entrada: 'abajo' },   // más adelante: descripción y medidas técnicas del exhibidor
     ];
 
     const grupoVideo = new THREE.Group();      // toda la presentación (video + paneles)
@@ -269,8 +301,9 @@
 
     // ── Pieza 3D ────────────────────────────────────────────────────────────────────────────────
     async function buscarPieza() {
-      const coleccion = params.get('coleccion') || 'alpina';
-      const id = params.get('pieza') || '01-bandeja-yogo';
+      const asignada = await tarjetaLista;
+      const coleccion = params.get('coleccion') || asignada.coleccion || 'alpina';
+      const id = params.get('pieza') || asignada.pieza || (asignada.coleccion ? '' : '01-bandeja-yogo');
       const res = await fetch(new URL('colecciones.json', RAIZ), { cache: 'no-cache' });
       const def = (await res.json())[coleccion];
       const m = def && (def.modelos.find(x => x.id === id) || def.modelos[0]);
@@ -314,8 +347,10 @@
     }
 
     // ── Estados ─────────────────────────────────────────────────────────────────────────────────
-    let tAparicion = 0;
+    let tAparicion = 0, videoArranco = false;
     function mostrarVideo() {
+      videoArranco = false;
+      video.pause();
       estado = 'video';
       grupoPieza.visible = false;
       grupoVideo.visible = true;
@@ -323,7 +358,6 @@
       video.currentTime = 0;
       $('verReal').hidden = $('escala').hidden = $('repetir').hidden = true;
       $('mensaje').textContent = '';
-      if (visible) reproducir();
     }
 
     function reproducir() {
@@ -364,7 +398,7 @@
       $('guia').hidden = true;
       $('abajo').hidden = false;
       if (estado === 'buscando') { if (videoVisto) mostrarPieza(); else mostrarVideo(); }
-      else if (estado === 'video' && video.paused) reproducir();
+      else if (estado === 'video' && videoArranco && video.paused) reproducir();
     }
     // La tarjeta salió de cuadro: nada se corta. El video sigue sonando y, si no vuelve enseguida, pasa a verse
     // en la pantalla; al reencontrar la tarjeta regresa a su lugar junto a ella.
@@ -374,7 +408,8 @@
       clearTimeout(relojPerdida);
       relojPerdida = setTimeout(() => {
         if (visible) return;
-        if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta para verlo junto a ella'); }
+        if (estado === 'video' && !videoArranco) pista('Apunta a la tarjeta para seguir');
+        else if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta para verlo junto a ella'); }
         else if (estado === 'pieza') pista('Apunta a la tarjeta para ver la pieza sobre ella');
       }, 700);
     }
@@ -404,7 +439,9 @@
       const { MindARThree } = await import('mindar-image-three');
       if (!mindar) {
         mindar = new MindARThree({
-          container: escena, imageTargetSrc: 'tarjeta.mind?v=' + VERSION,
+          // tarjeta-seguimiento.mind sale del PDF de impresión (scripts/objetivo-tarjeta.py): puntos repartidos hasta
+          // las esquinas y ninguno sobre el QR. ?objetivo=viejo vuelve al primer reconocimiento, para comparar.
+          container: escena, imageTargetSrc: (params_('objetivo') === 'viejo' ? 'tarjeta.mind' : 'tarjeta-seguimiento.mind') + '?v=' + VERSION,
           uiLoading: 'no', uiScanning: 'no', uiError: 'no',
           // Filtro de MindAR: quieto suaviza el temblor, en movimiento sigue a la tarjeta sin retraso
           // (con 0.0001 / 0.001 quedaba muy suave pero el video llegaba tarde al mover la tarjeta)
@@ -483,40 +520,94 @@
     let anclaGrupo = null, tUltimaVista = 0;
     const AGUANTE_MS = 700;       // cuánto se queda el contenido en su sitio si la tarjeta se pierde un momento
     // Calibración (se ajusta en vivo con el botón «Calibrar»; también ?pos=120&giro=220&salto=25)
+    const numero = (n, defecto) => { const v = parseFloat(params_(n)); return isNaN(v) ? defecto : v; };
     const cal = {
-      pos: parseFloat(params_('pos')) || 120,       // ms de retraso de la posición: más = más firme, menos = más ágil
-      giro: parseFloat(params_('giro')) || 220,     // ms de retraso del giro
-      salto: parseFloat(params_('salto')) || 25,    // grados: giros bruscos mayores a esto se ignoran un instante
+      pos: numero('pos', 120) || 1,       // ms de suavizado de la posición con la tarjeta quieta
+      giro: numero('giro', 220) || 1,     // ms de suavizado del giro con la tarjeta quieta
+      salto: numero('salto', 25),         // grados: giros bruscos mayores a esto se ignoran un instante
+      adelanto: numero('adelanto', 40),   // ms que se anticipa el movimiento (compensa lo que tarda la cámara en verse)
     };
     const pNueva = new THREE.Vector3(), qNueva = new THREE.Quaternion(), sNueva = new THREE.Vector3();
     const pSuave = new THREE.Vector3(), qSuave = new THREE.Quaternion();
-    let hayPose = false, tSalto = 0, tCuadro = 0;
+    // Última lectura de MindAR y velocidades medidas entre lecturas (posición y giro por segundo)
+    const pMed = new THREE.Vector3(), qMed = new THREE.Quaternion(), vel = new THREE.Vector3(), omega = new THREE.Vector3();
+    const pSal = new THREE.Vector3(), qSal = new THREE.Quaternion(), vTmp = new THREE.Vector3(), qTmp = new THREE.Quaternion();
+    const rampa = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    // Giro pequeño (cuaternión) → vector eje × ángulo en radianes, y al revés
+    function aVector(q, v) {
+      if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+      const s = Math.hypot(q.x, q.y, q.z);
+      return s < 1e-9 ? v.set(0, 0, 0) : v.set(q.x, q.y, q.z).multiplyScalar(2 * Math.atan2(s, q.w) / s);
+    }
+    function aGiro(v, q) {
+      const a = v.length();
+      if (a < 1e-9) return q.identity();
+      const s = Math.sin(a / 2) / a;
+      return q.set(v.x * s, v.y * s, v.z * s, Math.cos(a / 2));
+    }
+    let hayPose = false, tSalto = 0, tCuadro = 0, tMed = 0;
     function cuadro() {
       const ahora = performance.now();
       const dt = Math.min(100, ahora - (tCuadro || ahora));
       tCuadro = ahora;
       if (!modoDemo && anclaGrupo) {
         if (anclaGrupo.visible) {
-          // Antivibración. El contenido persigue a la tarjeta con un retraso fijo y corto (cal.pos / cal.giro, en
-          // milisegundos): movimiento continuo, sin frenar ni soltar de golpe (eso era lo que se veía como saltos).
-          // El giro va aparte y más lento: un temblor mínimo de ángulo se nota mucho en el video, lejos del centro.
+          // Seguimiento firme y sin retraso, en tres partes:
+          //  1. Suavizado: quieta, la tarjeta se filtra fuerte (cal.pos / cal.giro en ms) y no tiembla. La profundidad,
+          //     que es lo que peor mide la cámara, se filtra el doble; el sitio en la imagen, que mide bien, menos.
+          //  2. Velocidad: se mide a qué velocidad se mueve y gira la tarjeta entre una lectura y la siguiente. Cuanto
+          //     más rápido va, menos se suaviza (un filtro lento es el que hacía que el giro llegara tarde).
+          //  3. Anticipo: lo que el suavizado todavía atrasa, más lo que tarda la imagen de la cámara (cal.adelanto), se
+          //     adelanta con esa velocidad. Así el contenido gira CON la tarjeta en vez de perseguirla. Quieta no se
+          //     anticipa nada, para no convertir el temblor de la medida en movimiento.
           // Además se descartan las lecturas «locas»: si de un cuadro a otro la tarjeta aparece girada más de
           // cal.salto grados, se espera un cuarto de segundo antes de creerle (suele ser un error de un instante).
           anclaGrupo.matrix.decompose(pNueva, qNueva, sNueva);
-          if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) { pSuave.copy(pNueva); qSuave.copy(qNueva); hayPose = true; tSalto = 0; }
-          else {
-            const grados = THREE.MathUtils.radToDeg(qSuave.angleTo(qNueva));
-            const tramo = pSuave.distanceTo(pNueva) / pNueva.length();
-            const esSalto = grados > cal.salto || tramo > 0.3;
+          if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) {
+            pSuave.copy(pNueva); qSuave.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva);
+            vel.set(0, 0, 0); omega.set(0, 0, 0); tMed = ahora; hayPose = true; tSalto = 0;
+          } else {
+            const dist = pNueva.length() || 1;
+            const esSalto = THREE.MathUtils.radToDeg(qMed.angleTo(qNueva)) > cal.salto || pMed.distanceTo(pNueva) / dist > 0.3;
             if (esSalto && !tSalto) tSalto = ahora;
             if (!esSalto) tSalto = 0;
-            if (!esSalto || ahora - tSalto > 250) {
-              // Si la tarjeta se mueve de verdad, el retraso se acorta poco a poco (nunca de golpe)
-              pSuave.lerp(pNueva, 1 - Math.exp(-dt / (cal.pos / (1 + tramo * 30))));
-              qSuave.slerp(qNueva, 1 - Math.exp(-dt / (cal.giro / (1 + grados / 4))));
+            const creer = !esSalto || ahora - tSalto > 250;
+            if (creer && (!pNueva.equals(pMed) || !qNueva.equals(qMed))) {
+              // Llegó una lectura nueva: velocidad de traslado y de giro desde la anterior, promediada (~0,1 s)
+              const dtm = Math.min(0.2, Math.max(0.008, (ahora - tMed) / 1000));
+              if (esSalto) { vel.set(0, 0, 0); omega.set(0, 0, 0); }
+              else {
+                // Quieta se promedia largo (0,15 s) para que el temblor no parezca velocidad; en movimiento, corto
+                const aP = 1 - Math.exp(-dtm * (1 + vel.length() / dist / 0.067) / 0.15);
+                const aQ = 1 - Math.exp(-dtm * (1 + THREE.MathUtils.radToDeg(omega.length()) / 20) / 0.15);
+                vel.lerp(vTmp.copy(pNueva).sub(pMed).divideScalar(dtm), aP);
+                qTmp.copy(qMed).invert().premultiply(qNueva);
+                omega.lerp(aVector(qTmp, vTmp).divideScalar(dtm), aQ);
+              }
+              pMed.copy(pNueva); qMed.copy(qNueva); tMed = ahora;
+            } else if (ahora - tMed > 200) {
+              // Sin lecturas nuevas: la velocidad vieja ya no vale
+              const f = Math.exp(-dt / 80); vel.multiplyScalar(f); omega.multiplyScalar(f);
             }
+            const rapidez = vel.length() / dist;                            // fracción de la distancia por segundo
+            const giroSeg = THREE.MathUtils.radToDeg(omega.length());       // grados por segundo
+            const tauP = cal.pos / (1 + Math.max(0, rapidez - 0.03) / 0.12), tauQ = cal.giro / (1 + Math.max(0, giroSeg - 12) / 12);
+            const kXY = 1 - Math.exp(-dt / (tauP * 0.6)), kZ = 1 - Math.exp(-dt / (tauP * 2));
+            pSuave.x += (pMed.x - pSuave.x) * kXY; pSuave.y += (pMed.y - pSuave.y) * kXY; pSuave.z += (pMed.z - pSuave.z) * kZ;
+            qSuave.slerp(qMed, 1 - Math.exp(-dt / tauQ));
           }
-          soporte.matrix.compose(pSuave, qSuave, sNueva);
+          // Anticipo: solo cuando hay movimiento claro, y con tope para que un error nunca dispare el contenido
+          {
+            const dist = pSuave.length() || 1;
+            const rapidez = vel.length() / dist, giroSeg = THREE.MathUtils.radToDeg(omega.length());
+            const cP = rampa(rapidez, 0.03, 0.13), cQ = rampa(giroSeg, 12, 35);
+            const tauP = cal.pos / (1 + Math.max(0, rapidez - 0.03) / 0.12), tauQ = cal.giro / (1 + Math.max(0, giroSeg - 12) / 12);
+            vTmp.copy(vel).multiplyScalar((tauP * 0.6 + cal.adelanto) / 1000 * cP).clampLength(0, dist * 0.12);
+            pSal.copy(pSuave).add(vTmp);
+            vTmp.copy(omega).multiplyScalar((tauQ + cal.adelanto) / 1000 * cQ).clampLength(0, 0.26);
+            qSal.copy(qSuave).premultiply(aGiro(vTmp, qTmp));
+          }
+          soporte.matrix.compose(pSal, qSal, sNueva);
           soporte.matrixWorldNeedsUpdate = true;
           soporte.visible = true;
           tUltimaVista = ahora;
@@ -526,6 +617,7 @@
       if (grupoVideo.visible) {
         // Presentación por etapas: cada panel entra en su segundo («entra»), contado desde que arrancó el video
         const tPres = (ahora - tAparicion) / 1000;
+        if (!videoArranco && estado === 'video' && tPres >= PANELES[0].entra) { videoArranco = true; if (visible) reproducir(); }
         for (const def of PANELES) {
           const d = suave((tPres - def.entra) / 1.1), m = def.malla, c = def.caja, op = def.opacidad ?? 1;
           m.visible = d > 0;
@@ -548,7 +640,7 @@
         const v = PANELES[0];
         marcoVideo.scale.copy(v.malla.scale); marcoVideo.position.copy(v.malla.position); marcoVideo.position.z += 0.001;
         marcoVideo.visible = v.malla.visible;
-        barra.visible = tPres > 1.1;
+        barra.visible = tPres > v.entra + 1.1;
         if (video.duration) barra.scale.x = Math.max(0.001, barra.userData.ancho * video.currentTime / video.duration);
       }
       if (grupoPieza.visible) {
@@ -586,7 +678,7 @@
       $('inicio').hidden = true;
       // Dentro del toque: «despierta» el video para que después pueda sonar solo cuando aparezca la tarjeta
       video.src = 'video.mp4?v=' + VERSION;
-      video.play().then(() => { if (estado !== 'video') video.pause(); }).catch(() => {});
+      video.play().then(() => { if (estado !== 'video' || !videoArranco) video.pause(); }).catch(() => {});
       cargarPieza().then(() => { if (estado === 'pieza') mostrarPieza(); })
                    .catch(e => { console.error(e); avisar('No se pudo cargar la pieza 3D.'); });
       if (demo) { iniciarDemo(); return; }
@@ -620,7 +712,7 @@
     });
 
     // ── Calibración en vivo ─────────────────────────────────────────────────────────────────────
-    const controles = [['rPos', 'vPos', 'pos', ' ms'], ['rGiro', 'vGiro', 'giro', ' ms'], ['rSalto', 'vSalto', 'salto', '°']];
+    const controles = [['rPos', 'vPos', 'pos', ' ms'], ['rGiro', 'vGiro', 'giro', ' ms'], ['rSalto', 'vSalto', 'salto', '°'], ['rAdel', 'vAdel', 'adelanto', ' ms']];
     for (const [r, v, clave, unidad] of controles) {
       $(r).value = cal[clave];
       $(v).textContent = cal[clave] + unidad;

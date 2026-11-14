@@ -8,6 +8,12 @@
   <!-- Solo para el computador (con scripts/servidor-tarjeta.js):
        1) compila tarjeta.png → tarjeta.mind (lo que la cámara aprende a reconocer)
        2) graba un video de relleno (video.mp4) mientras llega el video real -->
+  <script>
+    // El compilador avanza con requestAnimationFrame, que se detiene si la ventana no está a la vista:
+    // en ese caso se usa un temporizador para que la compilación no se quede colgada.
+    const rafNativo = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = cb => document.hidden ? setTimeout(() => cb(performance.now()), 0) : rafNativo(cb);
+  </script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
   <style>
     body { font-family: system-ui, sans-serif; margin: 24px; max-width: 640px; color: #222; }
@@ -18,7 +24,7 @@
 </head>
 <body>
   <h1>Tarjeta AR · herramientas</h1>
-  <button id="compilar">1. Compilar reconocimiento (tarjeta.png → tarjeta.mind)</button>
+  <button id="compilar">1. Compilar reconocimiento (tarjeta-seguimiento.png → tarjeta-seguimiento.mind)</button>
   <button id="video">2. Grabar video de relleno (20 s)</button>
   <pre id="log">Listo.</pre>
   <canvas id="lienzo" width="1280" height="720"></canvas>
@@ -31,17 +37,119 @@
       return r.json();
     };
 
-    window.compilar = async () => {
+    // 'tarjeta-seguimiento' = la imagen que crea scripts/objetivo-tarjeta.py desde el PDF de impresión (la que usa la
+    // página). 'tarjeta' = la primera versión, que queda de respaldo (?objetivo=viejo) y no se vuelve a compilar aquí.
+    // Se probó una imagen por tarjeta con su QR y salió peor: el QR acapara los puntos y deja el texto sin ninguno.
+    //
+    // PUNTOS DE ANCLA PROPIOS. MindAR sigue la tarjeta buscando, cuadro a cuadro, unos pocos «puntos» del diseño
+    // (trocitos de 13 × 13 px de una copia pequeña de la imagen). Su selección automática es muy tacaña con esta
+    // tarjeta (unos 20, casi todos en el texto blanco), y con tan pocos el giro tiembla. Aquí se reemplaza esa
+    // lista por una elegida para este diseño: muchos más puntos, repartidos hasta las esquinas (triángulos,
+    // títulos verdes, sello), cada uno con forma de esquina (no de borde liso) y sin «gemelos» cerca que lo confundan.
+    // No se inventa nada que no esté impreso: son lugares reales del arte que la cámara sí puede ver.
+    const TAPADO = [0.32, 0, 0.68, 0.395];      // zona del QR / ícono AR / número, en «anchos de tarjeta» (x0, y0, x1, y1)
+    const R = 6;                                 // radio del trocito que compara MindAR (13 × 13)
+
+    // Copia de la imagen en gris con el ancho pedido (el formato que MindAR guarda para seguir)
+    function copiaGris(img, ancho) {
+      const alto = Math.round(ancho * img.height / img.width);
+      // Se reduce por mitades para que no queden dientes al achicar mucho
+      let fuente = img, w = img.width, h = img.height;
+      while (w / 2 >= ancho) {
+        const c = document.createElement('canvas'); c.width = w = Math.round(w / 2); c.height = h = Math.round(h / 2);
+        const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(fuente, 0, 0, w, h); fuente = c;
+      }
+      const c = document.createElement('canvas'); c.width = ancho; c.height = alto;
+      const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(fuente, 0, 0, ancho, alto);
+      const px = g.getImageData(0, 0, ancho, alto).data, data = new Uint8Array(ancho * alto);
+      for (let i = 0; i < data.length; i++) data[i] = Math.round((px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3);
+      return { data, width: ancho, height: alto, scale: ancho / img.width };
+    }
+
+    function elegirPuntos(t, { max = 60,separacion = 7, contraste = 9, parecido = 0.9, busqueda = 10 } = {}) {
+      const { data: G, width: w, height: h } = t, n = w * h;
+      // Sumas acumuladas para medir rápido cada trocito: brillo, brillo², y cambios horizontales / verticales
+      const acum = f => { const s = new Float64Array((w + 1) * (h + 1));
+        for (let y = 0; y < h; y++) { let fila = 0; for (let x = 0; x < w; x++) { fila += f(x, y); s[(y + 1) * (w + 1) + x + 1] = s[y * (w + 1) + x + 1] + fila; } }
+        return (x0, y0, x1, y1) => s[(y1 + 1) * (w + 1) + x1 + 1] - s[y0 * (w + 1) + x1 + 1] - s[(y1 + 1) * (w + 1) + x0] + s[y0 * (w + 1) + x0]; };
+      const g = (x, y) => G[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))];
+      const dx = (x, y) => (g(x + 1, y) - g(x - 1, y)) / 2, dy = (x, y) => (g(x, y + 1) - g(x, y - 1)) / 2;
+      const S = acum(g), S2 = acum((x, y) => g(x, y) ** 2);
+      const Sxx = acum((x, y) => dx(x, y) ** 2), Syy = acum((x, y) => dy(x, y) ** 2), Sxy = acum((x, y) => dx(x, y) * dy(x, y));
+      // Lo que queda fuera de la tarjeta (más su filo blanco) no sirve: ahí la cámara ve la mesa, no el diseño.
+      // Se marca rellenando el blanco desde las cuatro esquinas de la imagen.
+      const fuera = new Uint8Array(n), pila = [0, w - 1, (h - 1) * w, n - 1];
+      while (pila.length) { const i = pila.pop(); if (fuera[i] || G[i] < 245) continue; fuera[i] = 1;
+        const x = i % w; if (x > 0) pila.push(i - 1); if (x < w - 1) pila.push(i + 1); if (i >= w) pila.push(i - w); if (i < n - w) pila.push(i + w); }
+      const Sf = acum((x, y) => fuera[y * w + x]);
+      const area = (2 * R + 1) ** 2, margen = R + 2;
+      const tx0 = TAPADO[0] * w - margen, ty0 = TAPADO[1] * w - margen, tx1 = TAPADO[2] * w + margen, ty1 = TAPADO[3] * w + margen;
+      const candidatos = [];
+      for (let y = margen; y < h - margen; y++) for (let x = margen; x < w - margen; x++) {
+        if (x > tx0 && x < tx1 && y > ty0 && y < ty1) continue;
+        const a = [x - R, y - R, x + R, y + R];
+        if (Sf(...a) / area > 0.2) continue;
+        const media = S(...a) / area, desv = Math.sqrt(Math.max(0, S2(...a) / area - media * media));
+        if (desv < contraste) continue;
+        // «Forma de esquina»: el trocito debe cambiar en las dos direcciones (un borde liso solo cambia en una
+        // y el punto resbalaría a lo largo del borde)
+        const xx = Sxx(...a) / area, yy = Syy(...a) / area, xy = Sxy(...a) / area;
+        const esquina = (xx + yy) / 2 - Math.sqrt(((xx - yy) / 2) ** 2 + xy * xy);
+        if (esquina > 4) candidatos.push({ x, y, esquina });
+      }
+      candidatos.sort((a, b) => b.esquina - a.esquina);
+      // Parecido entre el trocito y él mismo corrido: si a pocos píxeles hay algo casi igual, la cámara lo confundiría
+      const trozo = (x, y) => { const v = new Float32Array(area); let k = 0, m = 0;
+        for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) { v[k] = G[(y + j) * w + x + i]; m += v[k++]; }
+        m /= area; let e = 0; for (k = 0; k < area; k++) { v[k] -= m; e += v[k] * v[k]; } return { v, e }; };
+      const unico = p => { const a = trozo(p.x, p.y);
+        for (let j = -busqueda; j <= busqueda; j += 2) for (let i = -busqueda; i <= busqueda; i += 2) {
+          if (Math.max(Math.abs(i), Math.abs(j)) < 4) continue;
+          const x = p.x + i, y = p.y + j;
+          if (x < R || y < R || x >= w - R || y >= h - R) continue;
+          const b = trozo(x, y); let s = 0; for (let k = 0; k < area; k++) s += a.v[k] * b.v[k];
+          if (s / Math.sqrt(a.e * b.e + 1e-9) > parecido) return false;
+        } return true; };
+      // Primero el mejor de cada casilla (para repartirlos por toda la tarjeta: los de las orillas son los que más
+      // afinan el giro), después se completa con los más fuertes que queden
+      const elegidos = [], casillas = new Set(), lado = 16;
+      const libre = c => !elegidos.some(e => Math.abs(e.x - c.x) < separacion && Math.abs(e.y - c.y) < separacion);
+      for (const c of candidatos) {
+        const casilla = Math.floor(c.x / lado) + ',' + Math.floor(c.y / lado);
+        if (elegidos.length >= max || casillas.has(casilla) || !libre(c)) continue;
+        if (unico(c)) { elegidos.push(c); casillas.add(casilla); }
+      }
+      for (const c of candidatos) {
+        if (elegidos.length >= max) break;
+        if (libre(c) && unico(c)) elegidos.push(c);
+      }
+      return elegidos.map(e => ({ x: e.x, y: e.y }));
+    }
+
+    // ancho = tamaño de la copia sobre la que se sigue. Medido con la tarjeta impresa simulada (14/11/2026):
+    //   puntos de MindAR, 128 px → sigue 5 a 13 puntos por cuadro
+    //   puntos propios,   128 px → sigue 20 a 59, y aguanta el mismo movimiento brusco que antes   ← el elegido
+    //   puntos propios, 192 / 256 px → pierde la tarjeta con un movimiento de 12 px entre cuadros: descartado
+    // opciones → elegirPuntos. propios:false deja los puntos de MindAR.
+    window.compilar = async ({ nombre = 'tarjeta-seguimiento', guardarlo = true, propios = true, ancho = 128, ...opciones } = {}) => {
       const img = new Image();
-      img.src = 'tarjeta.png?t=' + Date.now();
+      img.src = nombre + '.png?t=' + Date.now();
       await img.decode();
       const compilador = new window.MINDAR.IMAGE.Compiler();
       await compilador.compileImageTargets([img], p => { document.title = 'Compilando ' + p.toFixed(0) + '%'; });
+      const seg = compilador.data[0].trackingData;
+      const deMindAR = seg.map(t => t.points.length);
+      if (propios) {
+        // MindAR 1.2.5 sigue con la segunda copia (la pequeña); la primera se deja coherente por si cambia
+        seg[1] = copiaGris(img, ancho); seg[1].points = elegirPuntos(seg[1], opciones);
+        seg[0].points = elegirPuntos(seg[0], opciones);
+      }
       const datos = await compilador.exportData();
-      const r = await guardar('tarjeta.mind', datos);
-      log('tarjeta.mind guardado: ' + r.bytes + ' bytes');
+      const r = guardarlo ? await guardar(nombre + '.mind', datos) : {};
+      log(nombre + '.mind' + (guardarlo ? ' guardado: ' + r.bytes + ' bytes' : ' (sin guardar)') + ' · puntos de MindAR: ' + deMindAR.join(' + ')
+          + (propios ? ' → puntos propios: ' + seg.map(t => t.points.length + ' (a ' + t.width + ' px)').join(' + ') : ''));
       document.title = 'Tarjeta AR · herramientas';
-      return r;
+      return { ...r, datos, deMindAR, puntos: seg.map(t => t.points.length), seguimiento: seg[1] };
     };
 
     // Video de relleno: 3 «diapositivas» dibujadas en un lienzo y grabadas a .mp4

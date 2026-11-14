@@ -38,6 +38,11 @@
       <li>Toca <b>Comenzar</b> y permite la cámara.</li>
       <li>Apunta a la tarjeta de esta pantalla.</li>
     </ol>
+    <label for="num">Tarjeta (cada una tiene su QR fijo; la pieza se asigna en tarjetas.json)</label>
+    <select id="num" style="width:100%;padding:8px;font-size:13px;border-radius:6px;border:0">
+      <option value="1">Tarjeta 1</option><option value="2">Tarjeta 2</option>
+      <option value="3">Tarjeta 3</option><option value="4">Tarjeta 4</option>
+    </select>
     <label for="url">Dirección que abre el QR</label>
     <input id="url">
     <p><code id="info"></code></p>
@@ -66,22 +71,39 @@
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
     }
-    document.getElementById('svg').onclick = () => descargar('QR_tarjeta_14mm.svg', new Blob([svgActual], { type: 'image/svg+xml' }));
+    const num = document.getElementById('num');
+    document.getElementById('svg').onclick = () => descargar(`QR_tarjeta_${num.value}_14mm.svg`, new Blob([svgActual], { type: 'image/svg+xml' }));
     document.getElementById('png').onclick = () => {
       const img = new Image();
       img.onload = () => {
         const c = document.createElement('canvas'); c.width = c.height = 1024;
         const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(img, 0, 0, 1024, 1024);
-        c.toBlob(b => descargar('QR_tarjeta.png', b));
+        c.toBlob(b => descargar(`QR_tarjeta_${num.value}.png`, b));
       };
       img.src = 'data:image/svg+xml;base64,' + btoa(svgActual);
     };
 
     entrada.oninput = dibujar;
-    fetch('../../sitio.json').then(r => r.json()).catch(() => ({ url: 'https://innerciaar.com/' })).then(s => {
-      entrada.value = s.url.replace(/\/?$/, '/') + 'pruebas/tarjeta/';
-      dibujar();
+    // Dirección corta y fija por tarjeta (…/t/1): menos cuadros en el QR = se lee mejor a 14 mm
+    let base = 'https://innerciaar.com/';
+    const elegir = () => { entrada.value = base + 't/' + num.value; dibujar(); };
+    num.onchange = elegir;
+    fetch('../../sitio.json').then(r => r.json()).catch(() => ({ url: base })).then(s => {
+      base = s.url.replace(/\/?$/, '/');
+      elegir();
     });
+
+    // Solo en el computador (servidor-tarjeta.js): guarda los 4 QR como archivos en pruebas/tarjeta/
+    window.guardarTodos = async () => {
+      const hechos = [];
+      for (const n of [1, 2, 3, 4]) {
+        num.value = n; elegir();
+        const r = await fetch(`/__tarjeta/guardar?archivo=QR_tarjeta_${n}_14mm.svg`, { method: 'POST', body: svgActual });
+        hechos.push({ ...(await r.json()), url: entrada.value, info: document.getElementById('info').textContent });
+      }
+      num.value = 1; elegir();
+      return hechos;
+    };
   </script>
 </body>
 </html>
