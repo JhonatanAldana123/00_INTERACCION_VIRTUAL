@@ -152,10 +152,13 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261114b';
+    const VERSION = '20261114c';
+    const params_ = n => new URLSearchParams(location.search).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
     const ANCHO_M = 0.045;
-    const ALTO = 908 / 511;
+    const ALTO = 1775 / 1000;       // proporción de tarjeta.png
+    // Qué tan sólido se ve el video (1 = opaco). ?opacidad=0.3 para probar otros valores
+    const OPACIDAD = Math.min(1, Math.max(0.1, parseFloat(params_('opacidad')) || 0.7));
     const SEPARACION = 0.06;
     const ANCHO_VIDEO = 1.25;       // ancho del video, en «anchos de tarjeta»
 
@@ -179,9 +182,12 @@
     grupoVideo.visible = false;
     const texVideo = new THREE.VideoTexture(video);
     texVideo.colorSpace = THREE.SRGBColorSpace;
-    const planoVideo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: texVideo, toneMapped: false }));
-    const marcoVideo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
-    marcoVideo.position.z = -0.002;
+    const planoVideo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: texVideo, toneMapped: false, transparent: true, opacity: OPACIDAD, depthWrite: false }));
+    // Borde blanco fino (un fondo blanco detrás se transparentaría y lavaría el video)
+    const marcoVideo = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, toneMapped: false }));
+    marcoVideo.position.z = 0.001;
     const barra = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x93C01F, toneMapped: false }));
     barra.geometry.translate(0.5, 0, 0);      // crece desde la izquierda
     grupoVideo.add(marcoVideo, planoVideo, barra);
@@ -205,7 +211,8 @@
         x = 0.5 + SEPARACION + w / 2; y = ALTO / 2 - h / 2;
       }
       planoVideo.scale.set(w, h, 1);
-      marcoVideo.scale.set(w + 0.04, h + 0.04, 1);
+      marcoVideo.scale.set(w, h, 1);
+      grupoVideo.userData.destino = [x, y];
       barra.position.set(-w / 2, -h / 2 - 0.05, 0);
       barra.userData.ancho = w;
       barra.scale.set(0.001, 0.025, 1);
@@ -253,18 +260,12 @@
     }
 
     function aplicarEscala() {
-      if (tamanoReal) {
-        // Tarjeta acostada (mesa o piso): la pieza se para sobre ella a su tamaño verdadero
-        grupoPieza.rotation.set(Math.PI / 2, 0, 0);
-        grupoPieza.position.set(0, 0, 0);
-        grupoPieza.userData.escala = 1 / ANCHO_M;
-        giro.rotation.y = 0;
-      } else {
-        // Tarjeta en la mano: miniatura de frente, flotando sobre la tarjeta
-        grupoPieza.rotation.set(0, 0, 0);
-        grupoPieza.position.set(0, -0.6, 0.3);
-        grupoPieza.userData.escala = escalaMini;
-      }
+      // La pieza queda PARADA sobre la tarjeta (su «arriba» sale de la cara de la tarjeta) y con el frente hacia
+      // el borde inferior: se deja la tarjeta en una mesa y se le da la vuelta para verla por todos lados.
+      grupoPieza.rotation.set(Math.PI / 2, 0, 0);
+      grupoPieza.position.set(0, 0, 0);
+      grupoPieza.userData.escala = tamanoReal ? 1 / ANCHO_M : escalaMini;      // tamaño verdadero o miniatura
+      if (!modoDemo) giro.rotation.y = 0;
       grupoPieza.scale.setScalar(grupoPieza.userData.escala);
       $('escala').textContent = tamanoReal ? 'Volver a la miniatura' : 'Tamaño real sobre la tarjeta';
     }
@@ -301,7 +302,8 @@
       if (!pieza) { $('mensaje').textContent = 'Cargando la pieza…'; return; }
       grupoPieza.visible = true;
       const puedeAR = !!mv.canActivateAR;
-      $('mensaje').textContent = puedeAR ? 'Toca la pieza para llevarla a tu espacio' : 'Este es tu exhibidor · ábrelo en un celular para verlo en tu espacio';
+      $('mensaje').textContent = puedeAR ? 'Deja la tarjeta en una mesa y rodéala · toca la pieza para verla a tamaño real'
+                                         : 'Este es tu exhibidor · ábrelo en un celular para verlo en tu espacio';
       $('verReal').hidden = !puedeAR;
       $('escala').hidden = modoDemo;
       $('repetir').hidden = false;
@@ -437,11 +439,28 @@
     const soporte = new THREE.Group();
     let anclaGrupo = null, tUltimaVista = 0;
     const AGUANTE_MS = 700;       // cuánto se queda el contenido en su sitio si la tarjeta se pierde un momento
+    // Más bajo = más firme pero más lento al mover la tarjeta. ?suave=0.5 lo hace más firme, ?suave=2 más ágil
+    const AJUSTE = parseFloat(params_('suave')) || 1;
+    const SUAVE_POS = 40 * AJUSTE, SUAVE_GIRO = 15 * AJUSTE;
+    const pNueva = new THREE.Vector3(), qNueva = new THREE.Quaternion(), sNueva = new THREE.Vector3();
+    const pSuave = new THREE.Vector3(), qSuave = new THREE.Quaternion();
+    let hayPose = false;
     function cuadro() {
       const ahora = performance.now();
       if (!modoDemo && anclaGrupo) {
         if (anclaGrupo.visible) {
-          soporte.matrix.copy(anclaGrupo.matrix);
+          // Antivibración: si la tarjeta casi no se movió (temblor), el contenido se acerca despacio a la nueva
+          // posición; si se movió de verdad, la sigue de inmediato. El giro se suaviza aparte porque un temblor
+          // mínimo de ángulo se nota mucho en el video, que está lejos del centro de la tarjeta.
+          anclaGrupo.matrix.decompose(pNueva, qNueva, sNueva);
+          if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) { pSuave.copy(pNueva); qSuave.copy(qNueva); hayPose = true; }
+          else {
+            const aP = THREE.MathUtils.clamp(pSuave.distanceTo(pNueva) / pNueva.length() * SUAVE_POS, 0.1, 1);
+            const aQ = THREE.MathUtils.clamp(qSuave.angleTo(qNueva) * SUAVE_GIRO, 0.08, 1);
+            pSuave.lerp(pNueva, aP);
+            qSuave.slerp(qNueva, aQ);
+          }
+          soporte.matrix.compose(pSuave, qSuave, sNueva);
           soporte.matrixWorldNeedsUpdate = true;
           soporte.visible = true;
           tUltimaVista = ahora;
@@ -449,16 +468,24 @@
       }
       const k = suave((ahora - tAparicion) / 600);
       if (grupoVideo.visible) {
-        grupoVideo.scale.setScalar(Math.max(0.001, k));
+        // Entrada: el video sale de la tarjeta y se desliza hasta su lugar, creciendo y aclarándose
+        const d = suave((ahora - tAparicion) / 1100), [xf, yf] = grupoVideo.userData.destino || [0, 0];
+        const x0 = lado() === 'arriba' ? xf : 0, y0 = lado() === 'arriba' ? 0 : yf;
+        grupoVideo.position.set(x0 + (xf - x0) * d, y0 + (yf - y0) * d, 0.01);
+        grupoVideo.scale.setScalar(0.35 + 0.65 * d);
+        planoVideo.material.opacity = OPACIDAD * d;
+        marcoVideo.material.opacity = 0.9 * d;
         if (video.duration) barra.scale.x = Math.max(0.001, barra.userData.ancho * video.currentTime / video.duration);
       }
       if (grupoPieza.visible) {
         grupoPieza.scale.setScalar(Math.max(0.001, k) * grupoPieza.userData.escala);
-        if (!tamanoReal) giro.rotation.y = ahora / 1000 * 0.6;
+        if (modoDemo) giro.rotation.y = ahora / 1000 * 0.6;      // sin tarjeta real nadie puede rodearla: gira sola
       }
-      if (modoDemo) {      // leve vaivén, para que se note el volumen
-        mundoDemo.rotation.y = Math.sin(ahora / 2200) * 0.22;
-        mundoDemo.rotation.x = Math.sin(ahora / 3100) * 0.06;
+      if (modoDemo) {
+        // Leve vaivén para que se note el volumen; con la pieza, la tarjeta se «acuesta» como sobre una mesa
+        const acostada = estado === 'pieza' ? -1.0 : Math.sin(ahora / 3100) * 0.06;
+        mundoDemo.rotation.x += (acostada - mundoDemo.rotation.x) * 0.08;
+        mundoDemo.rotation.y = estado === 'pieza' ? 0 : Math.sin(ahora / 2200) * 0.22;
       }
       renderer.render(scene, camera);
     }
