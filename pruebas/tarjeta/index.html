@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#00445E">
+  <title>Innercia · Tarjeta AR</title>
+  <!-- PRUEBA de la tarjeta AR.
+       El QR de la tarjeta abre esta página → «Comenzar» → la cámara reconoce la tarjeta → el video se reproduce
+       al lado → al terminar aparece la pieza 3D sobre la tarjeta → un toque la lleva al piso a tamaño real
+       (el mismo AR del visor: Scene Viewer en Android, Quick Look en iPhone).
+       Parámetros:  ?coleccion=alpina&pieza=01-bandeja-yogo   pieza que se muestra al final
+                    ?lado=arriba                               video encima de la tarjeta (por defecto: derecha)
+                    ?demo=1                                    sin cámara: tarjeta dibujada (computador / respaldo) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+    }
+  }
+  </script>
+  <style>
+    :root { --azul: #005A7C; --azul-osc: #00344A; --verde: #93C01F; --cian: #0091B5; --blanco: #fff; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; width: 100%; overflow: hidden; overscroll-behavior: none; background: #000; color: var(--blanco);
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none; user-select: none;
+    }
+    [hidden] { display: none !important; }
+    #escena { position: fixed; inset: 0; overflow: hidden; touch-action: none; }
+    #escena.demo { background: radial-gradient(circle at 50% 35%, #d9d4cc, #a8a29a); }
+
+    /* Pantalla de entrada */
+    .inicio {
+      position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; padding: 32px; text-align: center;
+      background: linear-gradient(160deg, var(--azul), var(--azul-osc));
+    }
+    .inicio .etiqueta { font-size: 11px; font-weight: 700; letter-spacing: .18em; color: var(--verde); }
+    .inicio h1 { font-size: 26px; font-weight: 700; line-height: 1.2; }
+    .inicio p { font-size: 15px; line-height: 1.45; color: rgba(255,255,255,.8); max-width: 300px; }
+    button { font: inherit; cursor: pointer; border: none; border-radius: 100px; -webkit-tap-highlight-color: transparent; transition: transform .12s ease; }
+    button:active { transform: scale(.96); }
+    .principal { background: var(--verde); color: #10240a; padding: 16px 34px; font-size: 17px; font-weight: 700; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+    .secundario { background: rgba(0,0,0,.45); color: var(--blanco); padding: 10px 18px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,.3); backdrop-filter: blur(6px); }
+    .enlace { background: none; color: rgba(255,255,255,.75); font-size: 13px; text-decoration: underline; padding: 6px; }
+
+    /* Guía «apunta a la tarjeta» */
+    .guia { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; pointer-events: none; }
+    .guia .marco {
+      height: 46vh; aspect-ratio: 45 / 80; border: 3px solid rgba(255,255,255,.9); border-radius: 18px;
+      box-shadow: 0 0 0 100vmax rgba(0,0,0,.35); animation: pulso 1.8s ease-in-out infinite;
+    }
+    @keyframes pulso { 50% { border-color: var(--verde); transform: scale(1.02); } }
+    .guia p { font-size: 16px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); z-index: 1; }
+    .guia button { pointer-events: auto; z-index: 1; }
+
+    /* Barras */
+    .arriba {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 30; pointer-events: none;
+      padding: max(env(safe-area-inset-top, 0px), 12px) 16px 30px; display: flex; justify-content: space-between; align-items: flex-start;
+      background: linear-gradient(to bottom, rgba(0,0,0,.45), transparent);
+    }
+    .arriba .marca { font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+    .arriba .marca b { color: var(--verde); }
+    .arriba button { pointer-events: auto; }
+    .abajo {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+      padding: 46px 16px max(env(safe-area-inset-bottom, 0px), 20px);
+      display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+      background: linear-gradient(to top, rgba(0,0,0,.7), transparent);
+    }
+    .abajo .mensaje { font-size: 15px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+    .abajo .fila { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .aviso {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 40; max-width: 80vw;
+      background: rgba(0,0,0,.75); padding: 12px 18px; border-radius: 14px; font-size: 14px; text-align: center; pointer-events: none;
+    }
+    #video { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; left: 0; bottom: 0; }
+    model-viewer { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; right: 0; bottom: 0; }
+  </style>
+</head>
+<body>
+  <div id="escena"></div>
+  <video id="video" playsinline webkit-playsinline preload="auto"></video>
+  <model-viewer id="mv" ar ar-modes="scene-viewer quick-look" ar-usdz-max-texture-size="1024" loading="eager" reveal="auto"></model-viewer>
+
+  <div class="inicio" id="inicio">
+    <span class="etiqueta">INNERCIA · REALIDAD AUMENTADA</span>
+    <h1>Mira lo que trae<br>esta tarjeta</h1>
+    <p>Permite el uso de la cámara y apunta a la tarjeta para ver la presentación.</p>
+    <button class="principal" id="comenzar">Comenzar</button>
+    <button class="enlace" id="sinTarjeta">No tengo la tarjeta a la mano</button>
+  </div>
+
+  <div class="guia" id="guia" hidden>
+    <div class="marco"></div>
+    <p id="guiaTexto">Apunta la cámara a la tarjeta</p>
+    <button class="secundario" id="guiaDemo" hidden>¿No la reconoce? Ver sin tarjeta</button>
+  </div>
+
+  <div class="arriba" id="arriba" hidden>
+    <span class="marca"><b>INNERCIA</b> · AR</span>
+    <button class="secundario" id="sonido" hidden>Activar sonido</button>
+  </div>
+
+  <div class="abajo" id="abajo" hidden>
+    <span class="mensaje" id="mensaje"></span>
+    <div class="fila">
+      <button class="principal" id="verReal" hidden>Ver a tamaño real en tu espacio</button>
+    </div>
+    <div class="fila">
+      <button class="secundario" id="escala" hidden>Tamaño real sobre la tarjeta</button>
+      <button class="secundario" id="repetir" hidden>Repetir video</button>
+      <button class="secundario" id="volver" hidden>Volver a la tarjeta</button>
+    </div>
+  </div>
+
+  <div class="aviso" id="aviso" hidden></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+    import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
+    const VERSION = '20261114a';
+    // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
+    const ANCHO_M = 0.045;
+    const ALTO = 908 / 511;
+    const SEPARACION = 0.08;
+
+    const params = new URLSearchParams(location.search);
+    let LADO = params.get('lado') === 'arriba' ? 'arriba' : 'derecha';
+    const RAIZ = new URL('../../', location.href);          // raíz del sitio (colecciones.json, models/)
+    const $ = id => document.getElementById(id);
+    const escena = $('escena'), video = $('video'), mv = $('mv');
+
+    let estado = 'inicio';        // inicio → buscando → video → pieza   (ar = fuera, en el AR del celular)
+    let modoDemo = false, mindar = null, renderer, scene, camera;
+    let visible = false;          // ¿se ve la tarjeta ahora?
+    let tamanoReal = false;
+    let limites = new THREE.Box3(new THREE.Vector3(-0.5, -ALTO / 2, 0), new THREE.Vector3(0.5, ALTO / 2, 0));
+
+    // ── Contenido que va pegado a la tarjeta (mismas coordenadas con cámara y en demo) ──────────────
+    const contenido = new THREE.Group();
+
+    const grupoVideo = new THREE.Group();
+    grupoVideo.visible = false;
+    const texVideo = new THREE.VideoTexture(video);
+    texVideo.colorSpace = THREE.SRGBColorSpace;
+    const planoVideo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: texVideo, toneMapped: false }));
+    const marcoVideo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+    marcoVideo.position.z = -0.002;
+    const barra = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x93C01F, toneMapped: false }));
+    barra.geometry.translate(0.5, 0, 0);      // crece desde la izquierda
+    grupoVideo.add(marcoVideo, planoVideo, barra);
+    contenido.add(grupoVideo);
+
+    const grupoPieza = new THREE.Group();     // posición y escala de la pieza respecto a la tarjeta
+    const giro = new THREE.Group();           // la miniatura gira sobre su eje
+    grupoPieza.add(giro);
+    grupoPieza.visible = false;
+    contenido.add(grupoPieza);
+    let pieza = null, escalaMini = 1, piezaInfo = null;
+
+    function colocarVideo() {
+      const aspecto = (video.videoWidth || 16) / (video.videoHeight || 9);
+      let w, h, x, y;
+      if (LADO === 'arriba') {
+        w = aspecto >= 1 ? 1.6 : 1; h = w / aspecto; x = 0; y = ALTO / 2 + SEPARACION + h / 2;
+      } else {
+        if (aspecto >= 1) { w = 1.6; h = w / aspecto; } else { h = ALTO; w = h * aspecto; }
+        x = 0.5 + SEPARACION + w / 2; y = ALTO / 2 - h / 2;
+      }
+      planoVideo.scale.set(w, h, 1);
+      marcoVideo.scale.set(w + 0.04, h + 0.04, 1);
+      barra.position.set(-w / 2, -h / 2 - 0.05, 0);
+      barra.userData.ancho = w;
+      barra.scale.set(0.001, 0.025, 1);
+      grupoVideo.position.set(x, y, 0.01);
+      limites = new THREE.Box3(new THREE.Vector3(-0.5, -ALTO / 2, 0), new THREE.Vector3(0.5, ALTO / 2, 0))
+        .union(new THREE.Box3(new THREE.Vector3(x - w / 2, y - h / 2 - 0.1, 0), new THREE.Vector3(x + w / 2, y + h / 2, 0)));
+      encuadrarDemo();
+    }
+    video.addEventListener('loadedmetadata', colocarVideo);
+
+    // ── Pieza 3D ────────────────────────────────────────────────────────────────────────────────
+    async function buscarPieza() {
+      const coleccion = params.get('coleccion') || 'alpina';
+      const id = params.get('pieza') || '01-bandeja-yogo';
+      const res = await fetch(new URL('colecciones.json', RAIZ), { cache: 'no-cache' });
+      const def = (await res.json())[coleccion];
+      const m = def && (def.modelos.find(x => x.id === id) || def.modelos[0]);
+      if (!m) throw new Error('No existe la pieza ' + coleccion + '/' + id);
+      const abs = (rel, v) => { const u = new URL(encodeURI(rel), RAIZ); if (v) u.searchParams.set('v', v); return u.href; };
+      return { nombre: m.nombre, glb: abs(m.archivo, m.version), usdz: m.usdz ? abs(m.usdz, m.version) : null };
+    }
+
+    async function cargarPieza() {
+      piezaInfo = await buscarPieza();
+      const cargador = new GLTFLoader();
+      cargador.setDRACOLoader(new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/'));
+      cargador.setMeshoptDecoder(MeshoptDecoder);
+      const gltf = await cargador.loadAsync(piezaInfo.glb);
+      pieza = gltf.scene;
+      const caja = new THREE.Box3().setFromObject(pieza);
+      const tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
+      pieza.position.set(-centro.x, -caja.min.y, -centro.z);      // apoyada en su base y centrada
+      giro.add(pieza);
+      escalaMini = 1.25 / Math.max(tam.x, tam.y, tam.z);          // la miniatura cabe en la tarjeta
+      aplicarEscala();
+      // El AR a tamaño real lo hace el mismo componente del visor (se carga aparte para no frenar el arranque)
+      if (piezaInfo.usdz) mv.setAttribute('ios-src', piezaInfo.usdz);
+      mv.setAttribute('src', piezaInfo.glb);
+      mv.setAttribute('alt', piezaInfo.nombre);
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.2.0/dist/model-viewer.min.js';
+      document.head.appendChild(s);
+    }
+
+    function aplicarEscala() {
+      if (tamanoReal) {
+        // Tarjeta acostada (mesa o piso): la pieza se para sobre ella a su tamaño verdadero
+        grupoPieza.rotation.set(Math.PI / 2, 0, 0);
+        grupoPieza.position.set(0, 0, 0);
+        grupoPieza.userData.escala = 1 / ANCHO_M;
+        giro.rotation.y = 0;
+      } else {
+        // Tarjeta en la mano: miniatura de frente, flotando sobre la tarjeta
+        grupoPieza.rotation.set(0, 0, 0);
+        grupoPieza.position.set(0, -0.6, 0.3);
+        grupoPieza.userData.escala = escalaMini;
+      }
+      grupoPieza.scale.setScalar(grupoPieza.userData.escala);
+      $('escala').textContent = tamanoReal ? 'Volver a la miniatura' : 'Tamaño real sobre la tarjeta';
+    }
+
+    // ── Estados ─────────────────────────────────────────────────────────────────────────────────
+    let tAparicion = 0;
+    function mostrarVideo() {
+      estado = 'video';
+      grupoPieza.visible = false;
+      grupoVideo.visible = true;
+      tAparicion = performance.now();
+      video.currentTime = 0;
+      $('verReal').hidden = $('escala').hidden = $('repetir').hidden = true;
+      $('mensaje').textContent = '';
+      if (visible) reproducir();
+    }
+
+    function reproducir() {
+      video.play().catch(() => {
+        // El celular no dejó sonar el video sin un toque: se reproduce en silencio y se ofrece activar el sonido
+        video.muted = true;
+        $('sonido').hidden = false;
+        video.play().catch(() => {});
+      });
+    }
+
+    function mostrarPieza() {
+      estado = 'pieza';
+      grupoVideo.visible = false;
+      tAparicion = performance.now();
+      if (!pieza) { $('mensaje').textContent = 'Cargando la pieza…'; return; }
+      grupoPieza.visible = true;
+      const puedeAR = !!mv.canActivateAR;
+      $('mensaje').textContent = puedeAR ? 'Toca la pieza para llevarla a tu espacio' : 'Este es tu exhibidor · ábrelo en un celular para verlo en tu espacio';
+      $('verReal').hidden = !puedeAR;
+      $('escala').hidden = modoDemo;
+      $('repetir').hidden = false;
+    }
+    video.addEventListener('ended', mostrarPieza);
+
+    function alEncontrar() {
+      visible = true;
+      $('guia').hidden = true;
+      $('abajo').hidden = false;
+      if (estado === 'buscando') mostrarVideo();
+      else if (estado === 'video') reproducir();
+    }
+    function alPerder() {
+      visible = false;
+      if (estado === 'video') video.pause();
+      if (estado === 'video' || estado === 'pieza') {
+        $('guiaTexto').textContent = 'Vuelve a apuntar a la tarjeta';
+        $('guia').hidden = false;
+      }
+    }
+
+    // A tamaño real en el piso: se suelta la cámara y se abre el AR del celular (necesita este toque)
+    function verReal() {
+      if (!mv.canActivateAR) { avisar('Abre esta página en un celular para verla en tu espacio.'); return; }
+      video.pause();
+      if (mindar) { renderer.setAnimationLoop(null); mindar.stop(); }
+      estado = 'ar';
+      $('guia').hidden = true;
+      $('mensaje').textContent = '¿Quieres ver la presentación otra vez?';
+      $('verReal').hidden = false; $('escala').hidden = true; $('repetir').hidden = true; $('volver').hidden = modoDemo;
+      mv.activateAR();
+    }
+
+    async function volver() {
+      $('volver').hidden = true;
+      try { await iniciarCamara(); } catch (e) { location.reload(); }
+    }
+
+    // ── Con cámara: MindAR sigue la tarjeta ─────────────────────────────────────────────────────
+    async function iniciarCamara() {
+      const { MindARThree } = await import('mindar-image-three');
+      if (!mindar) {
+        mindar = new MindARThree({
+          container: escena, imageTargetSrc: 'tarjeta.mind?v=' + VERSION,
+          uiLoading: 'no', uiScanning: 'no', uiError: 'no',
+          filterMinCF: 0.0001, filterBeta: 0.001,      // suaviza el temblor del contenido
+        });
+        ({ renderer, scene, camera } = mindar);
+        prepararLuz();
+        const ancla = mindar.addAnchor(0);
+        ancla.group.add(contenido);
+        ancla.onTargetFound = alEncontrar;
+        ancla.onTargetLost = alPerder;
+      }
+      await mindar.start();
+      estado = 'buscando';
+      visible = false;
+      $('guiaTexto').textContent = 'Apunta la cámara a la tarjeta';
+      $('guia').hidden = false;
+      $('arriba').hidden = false;
+      setTimeout(() => { if (estado === 'buscando') $('guiaDemo').hidden = false; }, 15000);
+      renderer.setAnimationLoop(cuadro);
+    }
+
+    // ── Sin cámara (computador, permiso negado o «no tengo la tarjeta»): tarjeta dibujada ───────
+    let mundoDemo;
+    function iniciarDemo() {
+      if (mindar) { renderer.setAnimationLoop(null); mindar.stop(); escena.innerHTML = ''; mindar = null; }
+      modoDemo = true;
+      // Sin tarjeta real, en un celular vertical el video se ve más grande encima que al lado
+      if (!params.has('lado') && innerHeight > innerWidth) LADO = 'arriba';
+      escena.classList.add('demo');
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      escena.appendChild(renderer.domElement);
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+      prepararLuz();
+      mundoDemo = new THREE.Group();
+      const tex = new THREE.TextureLoader().load('tarjeta.png?v=' + VERSION);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mundoDemo.add(new THREE.Mesh(new THREE.PlaneGeometry(1, ALTO), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })));
+      mundoDemo.add(contenido);
+      scene.add(mundoDemo);
+      addEventListener('resize', encuadrarDemo);
+      colocarVideo();
+      $('guia').hidden = true;
+      $('arriba').hidden = false;
+      estado = 'buscando';
+      renderer.setAnimationLoop(cuadro);
+      alEncontrar();
+    }
+
+    function encuadrarDemo() {
+      if (!modoDemo) return;
+      const w = escena.clientWidth, h = escena.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      const tam = limites.getSize(new THREE.Vector3()), centro = limites.getCenter(new THREE.Vector3());
+      const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const d = Math.max(tam.y / 2 / t, tam.x / 2 / (t * camera.aspect)) * 1.35;
+      camera.position.set(centro.x, centro.y, d);
+      camera.lookAt(centro.x, centro.y, 0);
+      camera.updateProjectionMatrix();
+    }
+
+    function prepararLuz() {
+      scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    }
+
+    // ── Cada cuadro ─────────────────────────────────────────────────────────────────────────────
+    const suave = t => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+    function cuadro() {
+      const ahora = performance.now();
+      const k = suave((ahora - tAparicion) / 600);
+      if (grupoVideo.visible) {
+        grupoVideo.scale.setScalar(Math.max(0.001, k));
+        if (video.duration) barra.scale.x = Math.max(0.001, barra.userData.ancho * video.currentTime / video.duration);
+      }
+      if (grupoPieza.visible) {
+        grupoPieza.scale.setScalar(Math.max(0.001, k) * grupoPieza.userData.escala);
+        if (!tamanoReal) giro.rotation.y = ahora / 1000 * 0.6;
+      }
+      if (modoDemo) {      // leve vaivén, para que se note el volumen
+        mundoDemo.rotation.y = Math.sin(ahora / 2200) * 0.22;
+        mundoDemo.rotation.x = Math.sin(ahora / 3100) * 0.06;
+      }
+      renderer.render(scene, camera);
+    }
+
+    // ── Toques ──────────────────────────────────────────────────────────────────────────────────
+    const rayo = new THREE.Raycaster();
+    let toque0 = null;
+    escena.addEventListener('pointerdown', e => { toque0 = [e.clientX, e.clientY]; });
+    escena.addEventListener('pointerup', e => {
+      if (!toque0 || Math.hypot(e.clientX - toque0[0], e.clientY - toque0[1]) > 12) return;
+      if (estado !== 'pieza' || !grupoPieza.visible) return;
+      const r = renderer.domElement.getBoundingClientRect();
+      rayo.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+      if (rayo.intersectObject(grupoPieza, true).length) verReal();
+    });
+
+    let relojAviso;
+    function avisar(texto) {
+      $('aviso').textContent = texto; $('aviso').hidden = false;
+      clearTimeout(relojAviso); relojAviso = setTimeout(() => { $('aviso').hidden = true; }, 4000);
+    }
+
+    async function comenzar(demo) {
+      $('inicio').hidden = true;
+      // Dentro del toque: «despierta» el video para que después pueda sonar solo cuando aparezca la tarjeta
+      video.src = 'video.mp4?v=' + VERSION;
+      video.play().then(() => { if (estado !== 'video') video.pause(); }).catch(() => {});
+      cargarPieza().then(() => { if (estado === 'pieza') mostrarPieza(); })
+                   .catch(e => { console.error(e); avisar('No se pudo cargar la pieza 3D.'); });
+      if (demo) { iniciarDemo(); return; }
+      try { await iniciarCamara(); }
+      catch (e) {
+        console.error(e);
+        avisar('No se pudo usar la cámara. Te mostramos la presentación sin ella.');
+        iniciarDemo();
+      }
+    }
+
+    $('comenzar').onclick = () => comenzar(params.has('demo'));
+    $('sinTarjeta').onclick = () => comenzar(true);
+    $('guiaDemo').onclick = iniciarDemo;
+    $('verReal').onclick = verReal;
+    $('volver').onclick = volver;
+    $('repetir').onclick = mostrarVideo;
+    $('escala').onclick = () => { tamanoReal = !tamanoReal; aplicarEscala(); tAparicion = performance.now(); };
+    $('sonido').onclick = () => { video.muted = false; $('sonido').hidden = true; };
+
+    // Para revisar desde el computador
+    window.__tarjeta = { get estado() { return estado; }, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv };
+  </script>
+</body>
+</html>
