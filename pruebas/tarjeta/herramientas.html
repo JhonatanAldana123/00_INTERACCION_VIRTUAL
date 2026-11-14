@@ -19,7 +19,7 @@
 <body>
   <h1>Tarjeta AR · herramientas</h1>
   <button id="compilar">1. Compilar reconocimiento (tarjeta.png → tarjeta.mind)</button>
-  <button id="video">2. Grabar video de relleno (8 s)</button>
+  <button id="video">2. Grabar video de relleno (20 s)</button>
   <pre id="log">Listo.</pre>
   <canvas id="lienzo" width="1280" height="720"></canvas>
 
@@ -45,7 +45,7 @@
     };
 
     // Video de relleno: 3 «diapositivas» dibujadas en un lienzo y grabadas a .mp4
-    window.grabarVideo = async (segundos = 8) => {
+    window.grabarVideo = async (segundos = 20) => {
       const c = document.getElementById('lienzo');
       const g = c.getContext('2d');
       const tipo = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
@@ -57,6 +57,8 @@
       const DIAPOS = [
         ['REALIDAD AUMENTADA', 'Presentación de prueba'],
         ['DISEÑO BIEN PENSADO', 'Exhibidores que venden más'],
+        ['DEL PLANO AL PUNTO DE VENTA', 'Diseño · producción · logística'],
+        ['PRODUCTO PATENTADO', 'Armado rápido, sin herramientas'],
         ['TU EXHIBIDOR EN 3D', 'Ahora míralo en tu espacio'],
       ];
       const ini = performance.now();

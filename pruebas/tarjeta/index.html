@@ -51,11 +51,19 @@
 
     /* Guía «apunta a la tarjeta» */
     .guia { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; pointer-events: none; }
+    /* La guía enseña el encuadre completo: la tarjeta a la izquierda y el hueco donde saldrá el video.
+       Así el celular queda desde el principio a la distancia en que caben las dos cosas. */
+    .guia .marcos { display: flex; gap: 2vw; align-items: flex-start; }
     .guia .marco {
-      height: 46vh; aspect-ratio: 45 / 80; border: 3px solid rgba(255,255,255,.9); border-radius: 18px;
-      box-shadow: 0 0 0 100vmax rgba(0,0,0,.35); animation: pulso 1.8s ease-in-out infinite;
+      width: 30vw; max-width: 26vh; aspect-ratio: 45 / 80; border: 3px solid rgba(255,255,255,.9); border-radius: 10px;
+      animation: pulso 1.8s ease-in-out infinite; display: flex; align-items: center; justify-content: center;
     }
-    @keyframes pulso { 50% { border-color: var(--verde); transform: scale(1.02); } }
+    .guia .fantasma {
+      width: 37.5vw; max-width: 32.5vh; aspect-ratio: 16 / 9; border: 2px dashed rgba(255,255,255,.6); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .guia .marcos span { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-shadow: 0 1px 6px rgba(0,0,0,.9); opacity: .9; }
+    @keyframes pulso { 50% { border-color: var(--verde); } }
     .guia p { font-size: 16px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); z-index: 1; }
     .guia button { pointer-events: auto; z-index: 1; }
 
@@ -108,8 +116,11 @@
   </div>
 
   <div class="guia" id="guia" hidden>
-    <div class="marco"></div>
-    <p id="guiaTexto">Apunta la cámara a la tarjeta</p>
+    <div class="marcos">
+      <div class="marco"><span>TARJETA</span></div>
+      <div class="fantasma"><span>VIDEO</span></div>
+    </div>
+    <p id="guiaTexto">Ubica la tarjeta en el recuadro</p>
     <button class="secundario" id="guiaDemo" hidden>¿No la reconoce? Ver sin tarjeta</button>
   </div>
 
@@ -141,16 +152,16 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261114a';
+    const VERSION = '20261114b';
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
     const ANCHO_M = 0.045;
     const ALTO = 908 / 511;
-    const SEPARACION = 0.08;
+    const SEPARACION = 0.06;
+    const ANCHO_VIDEO = 1.25;       // ancho del video, en «anchos de tarjeta»
 
     const params = new URLSearchParams(location.search);
-    // Dónde va el video: con el celular vertical, ENCIMA de la tarjeta (así las dos cosas caben en la pantalla sin
-    // tener que mover el celular y perder la tarjeta); con el celular acostado, a la DERECHA. ?lado= lo fija.
-    const lado = () => params.get('lado') || (innerHeight > innerWidth ? 'arriba' : 'derecha');
+    // El video va a la DERECHA de la tarjeta (decisión del diseño). ?lado=arriba lo pone encima, para comparar.
+    const lado = () => params.get('lado') || 'derecha';
     const RAIZ = new URL('../../', location.href);          // raíz del sitio (colecciones.json, models/)
     const $ = id => document.getElementById(id);
     const escena = $('escena'), video = $('video'), mv = $('mv');
@@ -189,7 +200,8 @@
       if (lado() === 'arriba') {
         w = aspecto >= 1 ? 1.5 : 1; h = w / aspecto; x = 0; y = ALTO / 2 + SEPARACION + h / 2;
       } else {
-        if (aspecto >= 1) { w = 1.6; h = w / aspecto; } else { h = ALTO; w = h * aspecto; }
+        // Compacto y pegado a la tarjeta: tarjeta + video deben caber en un celular vertical sin alejarse mucho
+        if (aspecto >= 1) { w = ANCHO_VIDEO; h = w / aspecto; } else { h = ALTO; w = h * aspecto; }
         x = 0.5 + SEPARACION + w / 2; y = ALTO / 2 - h / 2;
       }
       planoVideo.scale.set(w, h, 1);
@@ -349,20 +361,28 @@
         mindar = new MindARThree({
           container: escena, imageTargetSrc: 'tarjeta.mind?v=' + VERSION,
           uiLoading: 'no', uiScanning: 'no', uiError: 'no',
-          filterMinCF: 0.0001, filterBeta: 0.001,      // suaviza el temblor del contenido
+          // Filtro de MindAR: quieto suaviza el temblor, en movimiento sigue a la tarjeta sin retraso
+          // (con 0.0001 / 0.001 quedaba muy suave pero el video llegaba tarde al mover la tarjeta)
+          filterMinCF: 0.001, filterBeta: 1000,
           missTolerance: 12,                           // aguanta más cuadros dudosos antes de dar la tarjeta por perdida
         });
         ({ renderer, scene, camera } = mindar);
         prepararLuz();
         const ancla = mindar.addAnchor(0);
-        ancla.group.add(contenido);
+        // El contenido no cuelga directo del ancla: MindAR lo desaparece en el instante en que duda. Va en un
+        // «soporte» que copia la posición del ancla y, si se pierde un momento, se queda donde estaba (ver cuadro()).
+        anclaGrupo = ancla.group;
+        soporte.matrixAutoUpdate = false;
+        soporte.visible = false;
+        soporte.add(contenido);
+        scene.add(soporte);
         ancla.onTargetFound = alEncontrar;
         ancla.onTargetLost = alPerder;
       }
       await mindar.start();
       estado = 'buscando';
       visible = false;
-      $('guiaTexto').textContent = 'Apunta la cámara a la tarjeta';
+      $('guiaTexto').textContent = 'Ubica la tarjeta en el recuadro';
       $('guia').hidden = false;
       $('arriba').hidden = false;
       setTimeout(() => { if (estado === 'buscando') $('guiaDemo').hidden = false; }, 15000);
@@ -372,7 +392,7 @@
     // ── Sin cámara (computador, permiso negado o «no tengo la tarjeta»): tarjeta dibujada ───────
     let mundoDemo;
     function iniciarDemo() {
-      if (mindar) { renderer.setAnimationLoop(null); mindar.stop(); escena.innerHTML = ''; mindar = null; }
+      if (mindar) { renderer.setAnimationLoop(null); mindar.stop(); escena.innerHTML = ''; mindar = null; anclaGrupo = null; }
       modoDemo = true;
       escena.classList.add('demo');
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -414,8 +434,19 @@
 
     // ── Cada cuadro ─────────────────────────────────────────────────────────────────────────────
     const suave = t => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+    const soporte = new THREE.Group();
+    let anclaGrupo = null, tUltimaVista = 0;
+    const AGUANTE_MS = 700;       // cuánto se queda el contenido en su sitio si la tarjeta se pierde un momento
     function cuadro() {
       const ahora = performance.now();
+      if (!modoDemo && anclaGrupo) {
+        if (anclaGrupo.visible) {
+          soporte.matrix.copy(anclaGrupo.matrix);
+          soporte.matrixWorldNeedsUpdate = true;
+          soporte.visible = true;
+          tUltimaVista = ahora;
+        } else if (ahora - tUltimaVista > AGUANTE_MS) soporte.visible = false;
+      }
       const k = suave((ahora - tAparicion) / 600);
       if (grupoVideo.visible) {
         grupoVideo.scale.setScalar(Math.max(0.001, k));
