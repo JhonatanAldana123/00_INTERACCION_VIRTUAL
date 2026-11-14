@@ -11,7 +11,7 @@
        al lado → al terminar aparece la pieza 3D sobre la tarjeta → un toque la lleva al piso a tamaño real
        (el mismo AR del visor: Scene Viewer en Android, Quick Look en iPhone).
        Parámetros:  ?coleccion=alpina&pieza=01-bandeja-yogo   pieza que se muestra al final
-                    ?lado=arriba                               video encima de la tarjeta (por defecto: derecha)
+                    ?opacidad=0.7  ?pos=120&giro=220&salto=25  transparencia del video y calibración del seguimiento
                     ?demo=1                                    sin cámara: tarjeta dibujada (computador / respaldo) -->
   <script type="importmap">
   {
@@ -180,19 +180,15 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261114d';
+    const VERSION = '20261114e';
     const params_ = n => new URLSearchParams(location.search).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
     const ANCHO_M = 0.045;
     const ALTO = 1775 / 1000;       // proporción de tarjeta.png
     // Qué tan sólido se ve el video (1 = opaco). ?opacidad=0.3 para probar otros valores
     const OPACIDAD = Math.min(1, Math.max(0.1, parseFloat(params_('opacidad')) || 0.7));
-    const SEPARACION = 0.06;
-    const ANCHO_VIDEO = 1.25;       // ancho del video, en «anchos de tarjeta»
 
     const params = new URLSearchParams(location.search);
-    // El video va a la DERECHA de la tarjeta (decisión del diseño). ?lado=arriba lo pone encima, para comparar.
-    const lado = () => params.get('lado') || 'derecha';
     const RAIZ = new URL('../../', location.href);          // raíz del sitio (colecciones.json, models/)
     const $ = id => document.getElementById(id);
     const escena = $('escena'), video = $('video'), mv = $('mv');
@@ -206,19 +202,45 @@
     // ── Contenido que va pegado a la tarjeta (mismas coordenadas con cámara y en demo) ──────────────
     const contenido = new THREE.Group();
 
-    const grupoVideo = new THREE.Group();
+    // ── Presentación por etapas ─────────────────────────────────────────────────────────────────
+    // Cada panel se ubica por su esquina SUPERIOR IZQUIERDA (x, y) y su ancho, medidos en «anchos de tarjeta»
+    // desde el centro de la tarjeta (la tarjeta va de x −0.5 a 0.5, y de y +ALTO/2 arriba a −ALTO/2 abajo).
+    //   entra   = segundo en que aparece, contado desde que arranca el video
+    //   entrada = 'derecha' (sale de detrás de la tarjeta) · 'abajo' (se despliega como persiana) · 'aparecer'
+    // Para cambiar un panel basta reemplazar su imagen (PNG con transparencia) con el mismo nombre.
+    const PEGADO = 0.03;                       // separación entre la tarjeta y el video
+    const altoVideo = () => PANELES[0].caja ? PANELES[0].caja.h : 1.25 * 9 / 16;
+    const PANELES = [
+      { id: 'video',     video: true,                   x: 0.5 + PEGADO, y: ALTO / 2,                            ancho: 1.25, entra: 0,   entrada: 'derecha', opacidad: OPACIDAD },
+      { id: 'logo',      imagen: 'panel-logo.png',      x: -0.5,         y: ALTO / 2 + 0.38,                     ancho: 1.0,  entra: 2.5, entrada: 'aparecer' },
+      { id: 'quienes',   imagen: 'panel-quienes.png',   x: -0.1,         y: -ALTO / 2 + 0.1,                     ancho: 1.7,  entra: 4.5, entrada: 'abajo' },
+      { id: 'servicios', imagen: 'panel-servicios.png', x: 0.5 + PEGADO, y: () => ALTO / 2 - altoVideo() - 0.09, ancho: 1.25, entra: 6.5, entrada: 'abajo' },
+    ];
+
+    const grupoVideo = new THREE.Group();      // toda la presentación (video + paneles)
     grupoVideo.visible = false;
     const texVideo = new THREE.VideoTexture(video);
     texVideo.colorSpace = THREE.SRGBColorSpace;
-    const planoVideo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ map: texVideo, toneMapped: false, transparent: true, opacity: OPACIDAD, depthWrite: false }));
-    // Borde blanco fino (un fondo blanco detrás se transparentaría y lavaría el video)
+    const cargadorImg = new THREE.TextureLoader();
+    PANELES.forEach((def, i) => {
+      def.aspecto = 2;
+      def.z = 0.01 + i * 0.002;
+      def.tex = def.video ? texVideo : cargadorImg.load(def.imagen + '?v=' + VERSION, t => {
+        def.aspecto = t.image.width / t.image.height;
+        colocarVideo();
+      });
+      def.tex.colorSpace = THREE.SRGBColorSpace;
+      def.malla = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ map: def.tex, toneMapped: false, transparent: true, opacity: 0, depthWrite: false }));
+      def.malla.visible = false;
+      grupoVideo.add(def.malla);
+    });
+    // Borde blanco fino del video y barra de avance
     const marcoVideo = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
       new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, toneMapped: false }));
-    marcoVideo.position.z = 0.001;
     const barra = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x93C01F, toneMapped: false }));
     barra.geometry.translate(0.5, 0, 0);      // crece desde la izquierda
-    grupoVideo.add(marcoVideo, planoVideo, barra);
+    grupoVideo.add(marcoVideo, barra);
     contenido.add(grupoVideo);
 
     const grupoPieza = new THREE.Group();     // posición y escala de la pieza respecto a la tarjeta
@@ -229,28 +251,21 @@
     let pieza = null, escalaMini = 1, piezaInfo = null;
 
     function colocarVideo() {
-      const aspecto = (video.videoWidth || 16) / (video.videoHeight || 9);
-      let w, h, x, y;
-      if (lado() === 'arriba') {
-        w = aspecto >= 1 ? 1.5 : 1; h = w / aspecto; x = 0; y = ALTO / 2 + SEPARACION + h / 2;
-      } else {
-        // Compacto y pegado a la tarjeta: tarjeta + video deben caber en un celular vertical sin alejarse mucho
-        if (aspecto >= 1) { w = ANCHO_VIDEO; h = w / aspecto; } else { h = ALTO; w = h * aspecto; }
-        x = 0.5 + SEPARACION + w / 2; y = ALTO / 2 - h / 2;
+      PANELES[0].aspecto = (video.videoWidth || 16) / (video.videoHeight || 9);
+      limites = new THREE.Box3(new THREE.Vector3(-0.5, -ALTO / 2, 0), new THREE.Vector3(0.5, ALTO / 2, 0));
+      for (const def of PANELES) {
+        const w = def.ancho, h = w / def.aspecto, l = def.x, t = typeof def.y === 'function' ? def.y() : def.y;
+        def.caja = { l, t, w, h };
+        limites.union(new THREE.Box3(new THREE.Vector3(l, t - h, 0), new THREE.Vector3(l + w, t, 0)));
       }
-      planoVideo.scale.set(w, h, 1);
-      marcoVideo.scale.set(w, h, 1);
-      grupoVideo.userData.destino = [x, y];
-      barra.position.set(-w / 2, -h / 2 - 0.05, 0);
-      barra.userData.ancho = w;
-      barra.scale.set(0.001, 0.025, 1);
-      grupoVideo.position.set(x, y, 0.01);
-      limites = new THREE.Box3(new THREE.Vector3(-0.5, -ALTO / 2, 0), new THREE.Vector3(0.5, ALTO / 2, 0))
-        .union(new THREE.Box3(new THREE.Vector3(x - w / 2, y - h / 2 - 0.1, 0), new THREE.Vector3(x + w / 2, y + h / 2, 0)));
+      const v = PANELES[0].caja;
+      barra.position.set(v.l, v.t - v.h - 0.03, 0.012);
+      barra.userData.ancho = v.w;
+      barra.scale.set(0.001, 0.02, 1);
       encuadrarDemo();
     }
     video.addEventListener('loadedmetadata', colocarVideo);
-    addEventListener('resize', colocarVideo);       // al girar el celular el video cambia de lado
+    addEventListener('resize', colocarVideo);       // reencuadra la vista sin cámara
 
     // ── Pieza 3D ────────────────────────────────────────────────────────────────────────────────
     async function buscarPieza() {
@@ -509,13 +524,31 @@
       }
       const k = suave((ahora - tAparicion) / 600);
       if (grupoVideo.visible) {
-        // Entrada: el video sale de la tarjeta y se desliza hasta su lugar, creciendo y aclarándose
-        const d = suave((ahora - tAparicion) / 1100), [xf, yf] = grupoVideo.userData.destino || [0, 0];
-        const x0 = lado() === 'arriba' ? xf : 0, y0 = lado() === 'arriba' ? 0 : yf;
-        grupoVideo.position.set(x0 + (xf - x0) * d, y0 + (yf - y0) * d, 0.01);
-        grupoVideo.scale.setScalar(0.35 + 0.65 * d);
-        planoVideo.material.opacity = OPACIDAD * d;
-        marcoVideo.material.opacity = 0.9 * d;
+        // Presentación por etapas: cada panel entra en su segundo («entra»), contado desde que arrancó el video
+        const tPres = (ahora - tAparicion) / 1000;
+        for (const def of PANELES) {
+          const d = suave((tPres - def.entra) / 1.1), m = def.malla, c = def.caja, op = def.opacidad ?? 1;
+          m.visible = d > 0;
+          if (!m.visible) continue;
+          const e = Math.max(0.001, d);
+          if (def.entrada === 'derecha') {
+            // Sale de detrás del borde de la tarjeta: se va destapando y la imagen viaja con el borde que avanza
+            m.scale.set(c.w * e, c.h, 1); m.position.set(c.l + c.w * e / 2, c.t - c.h / 2, def.z);
+            def.tex.repeat.set(e, 1); def.tex.offset.set(1 - e, 0); m.material.opacity = op * Math.min(1, d * 3);
+          } else if (def.entrada === 'abajo') {
+            // Se despliega hacia abajo, como una persiana
+            m.scale.set(c.w, c.h * e, 1); m.position.set(c.l + c.w / 2, c.t - c.h * e / 2, def.z);
+            def.tex.repeat.set(1, e); def.tex.offset.set(0, 0); m.material.opacity = op * Math.min(1, d * 3);
+          } else {
+            // Aparece suave, subiendo un poco
+            m.scale.set(c.w, c.h, 1); m.position.set(c.l + c.w / 2, c.t - c.h / 2 - (1 - d) * 0.1, def.z);
+            m.material.opacity = op * d;
+          }
+        }
+        const v = PANELES[0];
+        marcoVideo.scale.copy(v.malla.scale); marcoVideo.position.copy(v.malla.position); marcoVideo.position.z += 0.001;
+        marcoVideo.visible = v.malla.visible;
+        barra.visible = tPres > 1.1;
         if (video.duration) barra.scale.x = Math.max(0.001, barra.userData.ancho * video.currentTime / video.duration);
       }
       if (grupoPieza.visible) {
