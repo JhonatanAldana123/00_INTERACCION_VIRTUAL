@@ -2,7 +2,7 @@
 
 **Doble clic en `FlujoAR.bat`** (en la carpeta del proyecto) y se abre una ventana que te guía de Rhino al QR. No hay que instalar nada.
 
-A la izquierda están los 8 pasos. Puedes seguirlos en orden con **Siguiente →** o saltar directo a cualquiera, por ejemplo al paso 7 si solo necesitas un QR.
+A la izquierda están los 8 pasos. Puedes seguirlos en orden con **Siguiente →** o saltar directo a cualquiera, por ejemplo al paso 6 si solo necesitas un QR.
 
 **La idea central:** cada **campaña** es una carpeta dentro de `models\`, y cada **pieza** (exhibidor, bandeja…) es una subcarpeta. Una campaña con varias piezas tiene un QR de colección; con una sola, un QR de esa pieza. Detalle en [CAMPANAS.md](CAMPANAS.md).
 
@@ -13,9 +13,21 @@ A la izquierda están los 8 pasos. Puedes seguirlos en orden con **Siguiente →
 | **3. Optimizar o animar** | **Pieza estática:** **Examinar…** → eliges el `.glb` → eliges la **campaña** (o escribes una nueva) → **Optimizar**. La pieza queda en `models\Campaña\Pieza\`, con el original de Rhino en `_original\`. Antes de optimizar te dice cuántas piezas tendrá la campaña. **Pieza animada:** el animador (ver abajo). |
 | **4. Revisar** | Eliges la campaña (o una pieza) → **Abrir en el navegador**: la ves en el visor desde tu computador, antes de publicar. Con la barra **Luz de la escena** ajustas qué tan clara se ve y la guardas para toda la campaña. |
 | **5. Campañas** | Lo que se detectó en las carpetas: piezas de cada campaña, su peso y su enlace. Aquí cambias el **orden** de las piezas (↑ Subir / ↓ Bajar). |
-| **6. Publicar** | Instrucciones de GitHub Desktop, botón para abrirlo y **Verificar publicación**, que revisa pieza por pieza si ya están en línea. |
-| **7. Generar QR** | **Catálogo** con una tarjeta por campaña (su QR abre todas sus piezas). Cada tarjeta tiene **PNG** (impresión) y **SVG** (PDF, Illustrator) y marca **✓** si ya está guardada. **Guardar todos** los guarda de una vez en la carpeta `qrs\`. |
-| **8. Tarjetas AR** | Las tarjetas impresas (cada una con su QR fijo). Eliges una tarjeta y decides qué **campaña y pieza** abre y qué **presentación** se reproduce sola antes de la pieza: un **video** o un **PDF**. Detalle abajo. |
+| **6. Generar QR** *(entrega)* | **Catálogo** con una tarjeta por campaña (su QR abre todas sus piezas). Cada tarjeta tiene **PNG** (impresión) y **SVG** (PDF, Illustrator) y marca **✓** si ya está guardada. **Guardar todos** los guarda de una vez en la carpeta `qrs\`. **Poner en tarjeta** lleva esa campaña al paso 7 ya elegida. |
+| **7. Tarjetas AR** *(entrega)* | Las tarjetas impresas (cada una con su QR fijo). Eliges una tarjeta y decides qué **campaña y pieza** abre y qué **presentación** se reproduce sola antes de la pieza: un **video** o un **PDF**. Detalle abajo. |
+| **8. Publicar** *(al final)* | Una sola vez, para todo: instrucciones de GitHub Desktop, botón para abrirlo y **Verificar publicación**, que revisa de una vez todas las campañas y todas las tarjetas y dice qué falta por subir. |
+
+### ¿QR, tarjeta o las dos?
+
+Los pasos 6 y 7 son las dos formas de **entregar** una campaña. Usas la que necesites y te saltas la otra; el paso 8 (Publicar) siempre es el último y se hace una sola vez.
+
+| Quiero… | Pasos |
+|---|---|
+| Solo el **QR** (sin tarjeta) | 1–5 → **6** guardar el QR → **8** publicar |
+| Solo la **tarjeta** (sin QR) | 1–5 → **7** elegir tarjeta, campaña y presentación → **8** publicar |
+| **QR y tarjeta** | 1–5 → **6** guardar el QR → clic en **Poner en tarjeta** → **7** clic en la tarjeta y Guardar → **8** publicar |
+
+El QR de una campaña y el QR impreso de una tarjeta nunca cambian, por eso se pueden guardar antes de publicar: empiezan a mostrar lo nuevo cuando publicas.
 
 ---
 
@@ -26,31 +38,34 @@ A la izquierda están los 8 pasos. Puedes seguirlos en orden con **Siguiente →
    Repite con `Bandeja01.glb`, eligiendo `Campaña Alpina` de la lista.
 3. **Paso 4:** Campaña Alpina → Abrir en el navegador → revisas las dos piezas con las flechas.
 4. **Paso 5** (opcional): cambias el orden si quieres que la bandeja salga primero.
-5. **Paso 6:** Abrir GitHub Desktop → **Commit to main** → **Push origin** → espera 1–2 minutos → Verificar publicación → todo en ✓.
-6. **Paso 7:** en el catálogo, tarjeta **Alpina** → PNG o SVG (o **Guardar todos**) → escanéalo con Android y con iPhone.
+5. **Paso 6:** en el catálogo, tarjeta **Alpina** → PNG o SVG (o **Guardar todos**).
+6. **Paso 8:** Abrir GitHub Desktop → **Commit to main** → **Push origin** → espera 1–2 minutos → Verificar publicación → todo en ✓ → escanea el QR con Android y con iPhone.
 
-> **¿Agregas una pieza a una campaña que ya tiene QR impreso?** No necesitas un QR nuevo: basta con los pasos 3 y 6. El mismo QR ya muestra la pieza nueva.
+> **¿Agregas una pieza a una campaña que ya tiene QR impreso?** No necesitas un QR nuevo: basta con los pasos 3 y 8. El mismo QR ya muestra la pieza nueva.
 
 ---
 
-## Tarjetas AR (paso 8)
+## Tarjetas AR (paso 7)
 
 La tarjeta impresa lleva un QR que nunca cambia (`innerciaar.com/t/1` … `t/4`). Al escanearlo se abre la pantalla
 azul con **Comenzar**, la cámara reconoce la tarjeta, se reproduce la presentación y al final aparece la pieza 3D.
-En el paso 8 decides qué muestra cada tarjeta, sin reimprimir:
+En el paso 7 decides qué muestra cada tarjeta, sin reimprimir:
 
 1. **Clic en la tarjeta** (1 a 4). Debajo de cada una ves qué abre hoy y qué presentación tiene.
-2. **Campaña** y **Pieza que abre**: las mismas campañas del paso 7. Al elegirlas se proponen solos el
+2. **Campaña** y **Pieza que abre**: las mismas campañas del paso 6 (si llegas con **Poner en tarjeta**, ya vienen elegidas al hacer clic en la tarjeta). Al elegirlas se proponen solos el
    **nombre que ve el cliente** y la **dirección** que queda en la barra del navegador; puedes cambiarlos
    (la dirección solo lleva letras sin tilde, números, `-` y `_`).
-3. **Presentación**:
+3. **Descripción y medidas**: el texto del panel azul que sale junto a la pieza 3D (3 o 4 renglones cortos; el título es el nombre de la pieza). Si lo dejas vacío sale un texto general.
+4. **Presentación**:
    - **Cargar video…** → un `.mp4` (lo ideal: menos de 15 MB; GitHub no recibe más de 100 MB).
    - **Cargar PDF…** → cada página se convierte en una imagen y pasan solas, una tras otra, en el lugar del video.
      **Segundos por página** decide cuánto dura cada una.
    - **Quitar** → vuelve al video general de Innercia (el de las tarjetas sin presentación propia).
-4. **Guardar tarjeta**. Con **Guardar y probar en el navegador** la ves enseguida en tu computador, sin cámara
+5. **Guardar tarjeta**. Con **Guardar y probar en el navegador** la ves enseguida en tu computador, sin cámara
    (con la tarjeta dibujada).
-5. **Paso 6:** Commit to main → Push origin. Después, el QR impreso ya muestra lo nuevo: pruébalo en el celular.
+6. **Paso 8:** Commit to main → Push origin. Después, el QR impreso ya muestra lo nuevo: pruébalo en el celular.
+
+**Qué ve quien escanea la tarjeta.** Pantalla de inicio con el nombre de la campaña y de la pieza y la pieza girando → **Comenzar** → un recuadro marca dónde poner la tarjeta. Con el celular **parado**, la tarjeta va abajo al centro y encima aparecen, en orden: logo, video o PDF, descripción con la pieza 3D al lado y la línea de contacto bajo la tarjeta. Con el celular **acostado**, la tarjeta va a la izquierda, el video o PDF en el centro y la pieza con la descripción a la derecha. Al voltear el celular la presentación vuelve a empezar en el otro formato. Acercar el celular a la tarjeta agranda todo; alejarlo lo achica. Tocar la pieza (o **Ver a tamaño real**) la lleva al piso en AR.
 
 Los archivos de cada tarjeta quedan en `tarjetas\<número>\` y la lista en `tarjetas.json`.
 
@@ -122,7 +137,7 @@ lo encuentra, haz clic en **Falta Blender** y elige `blender.exe`.
 5. **Generar animación** → la animación final en Blender (.blend, GLB, USDZ). Abajo a la derecha aparece una
    imagen al final de cada paso.
 6. **Preparar prueba en celulares** → prepara `pruebas\<pieza>\` (comprimida) y la abre en tu navegador. Para
-   probar el AR en los celulares, publícala (paso 6) y escanea el QR que aparece junto a los botones.
+   probar el AR en los celulares, publícala (paso 8) y escanea el QR que aparece junto a los botones.
 
 Todo se guarda solo en `001_ANIMACIÓN\<Pieza>\` (la receta en `animacion.json`): al volver al paso 3 con la
 misma pieza, retomas donde quedaste. **Abrir en Blender** abre el archivo animado para retoques finos.
@@ -141,18 +156,18 @@ Tu Windows tiene activado *Smart App Control*, que bloquea los `.exe` sin firma 
 Windows 10 u 11 con Node.js instalado (para optimizar y para leer las carpetas de campañas). La primera optimización descarga gltf-transform automáticamente.
 
 **¿Los QR necesitan internet para generarse?**
-No. La ventana los genera por sí misma. Para que *funcionen* al escanearlos, la campaña tiene que estar publicada (paso 6).
+No. La ventana los genera por sí misma. Para que *funcionen* al escanearlos, la campaña tiene que estar publicada (paso 8).
 
 **¿Puedo renombrar la carpeta de una campaña?**
 Sí. El enlace del QR quedó guardado en `_campana.json` dentro de la carpeta, así que el QR impreso sigue funcionando. No borres ese archivo.
 
 **¿Puedo organizar las carpetas a mano en el Explorador?**
-Sí: crear, renombrar o borrar carpetas de campañas y piezas. Los pasos 4 a 7 vuelven a leer las carpetas cada vez que los abres (o pulsa **Volver a leer carpetas** en el paso 5). Si algo no cumple la estructura (por ejemplo, un `.glb` suelto en la carpeta de la campaña), el paso 5 lo avisa en naranja.
+Sí: crear, renombrar o borrar carpetas de campañas y piezas. Los pasos 4 a 8 vuelven a leer las carpetas cada vez que los abres (o pulsa **Volver a leer carpetas** en el paso 5). Si algo no cumple la estructura (por ejemplo, un `.glb` suelto en la carpeta de la campaña), el paso 5 lo avisa en naranja.
 
 **Una parte de la pieza se ve negra.**
 Ese objeto no tiene material asignado en Rhino: el exportador le pone uno negro y metálico. El paso 3 lo avisa en naranja al optimizar. En Rhino, asígnale un material (con Metálico en 0), exporta de nuevo y vuelve a optimizar con el mismo nombre de pieza.
 
-**El paso 6 dice ⚠ o ✗.**
+**El paso 8 dice ⚠ o ✗.**
 - *"todavía no está publicada"*: falta Commit y Push en GitHub Desktop.
 - *"es otra versión"* o *"la lista de campañas es distinta"*: ya hiciste Push pero GitHub Pages aún no se actualizó. Espera 1–2 minutos y verifica de nuevo. También aparece si hiciste cambios después del último Push.
 
@@ -164,10 +179,11 @@ Ese objeto no tiene material asignado en Rhino: el exportador le pone uno negro 
 |---|---|
 | `FlujoAR.bat` | Lanzador: abre `herramientas\FlujoAR.ps1` sin ventana de consola |
 | `herramientas\FlujoAR.ps1` | Compila en memoria el código C# (Add-Type) y abre la ventana |
-| `herramientas\FlujoAR\Ventana.cs` | La ventana y los pasos 1 a 7 |
-| `herramientas\FlujoAR\Tarjetas.cs` | El paso 8 (Tarjetas AR): lee y escribe `tarjetas.json`, copia el video o convierte el PDF a `tarjetas\<n>\` |
+| `herramientas\FlujoAR\Ventana.cs` | La ventana y los pasos 1 a 6 |
+| `herramientas\FlujoAR\Publicar.cs` | El paso 8 (Publicar) y la verificación de campañas y tarjetas |
+| `herramientas\FlujoAR\Tarjetas.cs` | El paso 7 (Tarjetas AR): lee y escribe `tarjetas.json`, copia el video o convierte el PDF a `tarjetas\<n>\` |
 | `scripts\pdf-a-imagenes.ps1` | Convierte cada página de un PDF en `pagina-01.jpg`… con el lector de PDF de Windows |
-| `scripts\generar-tarjetas.js` | Valida `tarjetas.json` y crea la página de cada dirección visible (lo ejecuta el paso 8 al guardar; también `ActualizarTarjetas.bat`) |
+| `scripts\generar-tarjetas.js` | Valida `tarjetas.json` y crea la página de cada dirección visible (lo ejecuta el paso 7 al guardar; también `ActualizarTarjetas.bat`) |
 | `pruebas\tarjeta\index.html` | La experiencia de la tarjeta (cámara, presentación, pieza). Lee `tarjetas.json` |
 | `t\1` … `t\4` | Direcciones fijas de los QR impresos: no renombrar ni borrar |
 | `herramientas\FlujoAR\Qr.cs` | Generador de QR propio (ISO/IEC 18004, corrección M), sin dependencias |

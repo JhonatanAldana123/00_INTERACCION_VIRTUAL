@@ -22,6 +22,10 @@
     }
   }
   </script>
+  <!-- Tipografía de la tarjeta impresa (pantalla de inicio) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;500;700&display=swap">
   <style>
     :root { --azul: #005A7C; --azul-osc: #00344A; --verde: #93C01F; --cian: #0091B5; --blanco: #fff; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,14 +39,43 @@
     #escena.demo { background: radial-gradient(circle at 50% 35%, #d9d4cc, #a8a29a); }
 
     /* Pantalla de entrada */
+    /* Diseño del 16/11/2026: el mismo arte de la tarjeta impresa (azul, triángulos, flecha, Ubuntu), con el nombre
+       de la campaña y de la pieza arriba y la pieza 3D girando en un recuadro blanco. Pensada para celular vertical:
+       los tamaños salen del ancho (vw) con tope por el alto (vh), para que todo quepa sin desplazar. */
     .inicio {
-      position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 18px; padding: 32px; text-align: center;
-      background: linear-gradient(160deg, var(--azul), var(--azul-osc));
+      position: fixed; inset: 0; z-index: 50; overflow: hidden; background: #005C7E; text-align: center;
+      font-family: 'Ubuntu', -apple-system, 'Segoe UI', system-ui, sans-serif; font-weight: 300;
+      display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+      --tri: min(11vw, 7.5vh);          /* ancho de los triángulos; los nombres arrancan a su derecha, a su altura */
+      padding: max(env(safe-area-inset-top, 0px), calc(var(--tri) * 1.65)) 6vw max(env(safe-area-inset-bottom, 0px), 2.5vh);
     }
-    .inicio .etiqueta { font-size: 11px; font-weight: 700; letter-spacing: .18em; color: var(--verde); }
-    .inicio h1 { font-size: 26px; font-weight: 700; line-height: 1.2; }
-    .inicio p { font-size: 15px; line-height: 1.45; color: rgba(255,255,255,.8); max-width: 300px; }
+    .inicio > * { position: relative; z-index: 1; }
+    .inicio .triangulos { position: absolute; left: 0; top: 0; width: var(--tri); height: auto; z-index: 0; }
+    .inicio .flecha { position: absolute; left: 0; bottom: 0; width: 27vw; max-width: 19vh; height: auto; z-index: 0; pointer-events: none; }
+    .inicio .titulos {
+      display: flex; flex-direction: column; min-height: 2.3em;
+      align-self: stretch; text-align: left; margin-left: calc(var(--tri) - 2vw);      /* a la izquierda, junto a los triángulos */
+      font-weight: 700; font-size: clamp(16px, 5.6vw, 3.4vh); line-height: 1.18; text-transform: uppercase;
+    }
+    .inicio .titulos .campana { color: var(--verde); }
+    .inicio .cuadro {
+      flex: none; width: min(82vw, 41vh); aspect-ratio: 436 / 500; border-radius: 9%; overflow: hidden;
+      background: radial-gradient(circle at 50% 42%, #fff 50%, #e9edf1); box-shadow: 0 8px 26px rgba(0,0,0,.2);
+    }
+    .inicio .cuadro model-viewer {
+      position: static; display: block; width: 100%; height: 100%; opacity: 1; pointer-events: auto;
+      background: transparent; --poster-color: transparent; --progress-bar-color: var(--verde);
+    }
+    /* Textos directo sobre el fondo plano (sin recuadro); «Permite el uso…» siempre en dos líneas */
+    .inicio .texto p { white-space: nowrap; }       /* todo el texto de permisos en dos líneas exactas */
+    .inicio .cuadro { margin: 1.5vh 0; }
+    .inicio h1 { font-size: clamp(17px, 5vw, 3.1vh); font-weight: 500; line-height: 1.25; }
+    .inicio p { margin-top: .7vh; font-size: clamp(9.5px, 3.05vw, 1.9vh); line-height: 1.5; color: rgba(255,255,255,.9); }
+    .inicio .principal {
+      font-family: inherit; font-weight: 700; font-size: clamp(19px, 6vw, 3.8vh); line-height: 1.1;
+      color: #005C7E; background: var(--verde); padding: .28em 1.05em .34em; box-shadow: none;
+    }
+    .inicio .enlace { font-family: inherit; font-weight: 300; font-size: clamp(13px, 4vw, 2.5vh); color: #fff; text-decoration: underline; }
     button { font: inherit; cursor: pointer; border: none; border-radius: 100px; -webkit-tap-highlight-color: transparent; transition: transform .12s ease; }
     button:active { transform: scale(.96); }
     .principal { background: var(--verde); color: #10240a; padding: 16px 34px; font-size: 17px; font-weight: 700; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
@@ -50,22 +83,19 @@
     .enlace { background: none; color: rgba(255,255,255,.75); font-size: 13px; text-decoration: underline; padding: 6px; }
 
     /* Guía «apunta a la tarjeta» */
-    .guia { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; pointer-events: none; }
-    /* La guía enseña el encuadre completo: la tarjeta a la izquierda y el hueco donde saldrá el video.
-       Así el celular queda desde el principio a la distancia en que caben las dos cosas. */
-    .guia .marcos { display: flex; gap: 2vw; align-items: flex-start; }
+    /* El recuadro marca DÓNDE va la tarjeta para que toda la presentación quepa en la pantalla: abajo y centrada
+       con el celular parado, a la izquierda con el celular acostado. Su lugar y tamaño los pone colocarGuia(),
+       con las mismas medidas de la presentación (DISPOSICION). */
+    .guia { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
     .guia .marco {
-      width: 30vw; max-width: 26vh; aspect-ratio: 45 / 80; border: 3px solid rgba(255,255,255,.9); border-radius: 10px;
+      position: absolute; border: 3px solid rgba(255,255,255,.9); border-radius: 9px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.18);
       animation: pulso 1.8s ease-in-out infinite; display: flex; align-items: center; justify-content: center;
     }
-    .guia .fantasma {
-      width: 37.5vw; max-width: 32.5vh; aspect-ratio: 16 / 9; border: 2px dashed rgba(255,255,255,.6); border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .guia .marcos span { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-shadow: 0 1px 6px rgba(0,0,0,.9); opacity: .9; }
+    .guia .marco span { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-shadow: 0 1px 6px rgba(0,0,0,.9); opacity: .9; }
     @keyframes pulso { 50% { border-color: var(--verde); } }
-    .guia p { font-size: 16px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); z-index: 1; }
-    .guia button { pointer-events: auto; z-index: 1; }
+    .guia .info { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 0 16px; }
+    .guia p { font-size: 16px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+    .guia button { pointer-events: auto; }
 
     /* Barras */
     .arriba {
@@ -78,12 +108,17 @@
     .arriba button { pointer-events: auto; }
     .abajo {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
-      padding: 46px 16px max(env(safe-area-inset-bottom, 0px), 20px);
-      display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
-      background: linear-gradient(to top, rgba(0,0,0,.7), transparent);
+      padding: 14px 12px max(env(safe-area-inset-bottom, 0px), 14px); pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+      background: linear-gradient(to top, rgba(0,0,0,.45), transparent);
     }
-    .abajo .mensaje { font-size: 15px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+    /* Botones chicos en una sola fila: la presentación ocupa toda la pantalla y no deben taparla */
+    .abajo .mensaje { font-size: 13px; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+    .abajo .mensaje:empty { display: none; }
     .abajo .fila { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .abajo button { pointer-events: auto; }
+    .abajo .principal { padding: 9px 18px; font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+    .abajo .secundario { padding: 9px 14px; }
     .aviso {
       position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 40; max-width: 80vw;
       background: rgba(0,0,0,.75); padding: 12px 18px; border-radius: 14px; font-size: 14px; text-align: center; pointer-events: none;
@@ -103,13 +138,29 @@
     .panel b { color: var(--verde); }
     .panel input { width: 100%; }
     .panel small { opacity: .7; line-height: 1.35; }
-    /* Celular acostado: tarjeta y video caben más grandes, así que la guía también crece */
     @media (orientation: landscape) {
-      .guia { gap: 10px; }
-      .guia .marco { width: 36vh; max-width: none; }
-      .guia .fantasma { width: 45vh; max-width: none; }
-      .abajo { padding-top: 20px; }
-      .inicio { gap: 10px; padding: 16px; }
+      /* Celular acostado: el logo de la presentación va arriba a la izquierda, así que el nombre se quita de ahí,
+         y los botones bajan a la franja libre de abajo, sin fondo */
+      .arriba { background: none; }
+      .arriba .marca { visibility: hidden; }
+      .abajo { padding: 4px 12px max(env(safe-area-inset-bottom, 0px), 6px); background: none; }
+      .abajo .principal, .abajo .secundario { padding: 7px 14px; font-size: 12.5px; }
+      .guia .info { align-items: flex-start; text-align: left; }
+      /* Inicio con el celular acostado: la pieza a la izquierda y los textos a la derecha */
+      .inicio {
+        display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto auto;
+        column-gap: 5vw; row-gap: 3vh; align-content: center; justify-items: center; padding: 4vh 6vw 4vh 9vw;
+      }
+      .inicio .cuadro { grid-column: 1; grid-row: 1 / span 4; width: auto; height: min(90vh, 46vw); }
+      .inicio .titulos, .inicio .texto, .inicio .principal, .inicio .enlace { grid-column: 2; }
+      .inicio .titulos { font-size: clamp(15px, 6.4vh, 3.4vw); margin-left: 0; justify-self: stretch; }
+      .inicio .cuadro { margin: 0; }
+      .inicio h1 { font-size: clamp(15px, 5.6vh, 3vw); }
+      .inicio p { font-size: clamp(9px, 3.4vh, 1.42vw); }
+      .inicio .principal { font-size: clamp(17px, 6.6vh, 3.4vw); }
+      .inicio .enlace { font-size: clamp(12px, 4.2vh, 2.2vw); }
+      .inicio .triangulos { width: 7vh; }
+      .inicio .flecha { max-width: none; width: 26vh; }
     }
     .pista {
       position: fixed; left: 50%; transform: translateX(-50%); top: calc(max(env(safe-area-inset-top, 0px), 12px) + 34px); z-index: 31;
@@ -122,23 +173,35 @@
 <body>
   <div id="escena"></div>
   <video id="video" playsinline webkit-playsinline preload="auto"></video>
-  <model-viewer id="mv" ar ar-modes="scene-viewer quick-look" ar-usdz-max-texture-size="1024" loading="eager" reveal="auto"></model-viewer>
 
   <div class="inicio" id="inicio">
-    <span class="etiqueta" id="etiquetaInicio">INNERCIA · REALIDAD AUMENTADA</span>
-    <h1>Mira lo que trae<br>esta tarjeta</h1>
-    <p>Permite el uso de la cámara y apunta a la tarjeta para ver la presentación.<br><small>Con el celular acostado se ve más grande.</small></p>
+    <svg class="triangulos" viewBox="0 0 100 290" aria-hidden="true">
+      <polygon points="0,0 100,0 0,72" fill="#0091B5"/><polygon points="0,78 100,150 0,228" fill="#93C01F"/><polygon points="100,150 100,290 0,228" fill="#0091B5"/>
+    </svg>
+    <img class="flecha" src="portada-flecha.png?v=2" alt="">
+    <div class="titulos"><span class="campana" id="tituloCampana"></span><span id="tituloPieza"></span></div>
+    <!-- La pieza girando. Es el MISMO componente que después abre el AR a tamaño real: al pulsar «Comenzar»
+         sale de este recuadro y queda oculto (ver comenzar()). El <span slot="ar-button"> quita su botón de AR. -->
+    <div class="cuadro">
+      <model-viewer id="mv" ar ar-modes="scene-viewer quick-look" ar-usdz-max-texture-size="1024" loading="eager" reveal="auto"
+        camera-controls disable-zoom disable-pan autoplay auto-rotate auto-rotate-delay="0" rotation-per-second="24deg"
+        interaction-prompt="none" shadow-intensity="0.75" shadow-softness="1" environment-image="neutral" tone-mapping="neutral"
+        exposure="0.8" touch-action="pan-y" camera-orbit="-28deg 78deg 98%"><span slot="ar-button"></span></model-viewer>
+    </div>
+    <div class="texto">
+      <h1>Mira lo que trae<br>esta tarjeta</h1>
+      <p>Permite el uso de la cámara y apunta a la tarjeta para ver<br>la presentación. Con el celular acostado se ve más grande.</p>
+    </div>
     <button class="principal" id="comenzar">Comenzar</button>
     <button class="enlace" id="sinTarjeta">No tengo la tarjeta a la mano</button>
   </div>
 
   <div class="guia" id="guia" hidden>
-    <div class="marcos">
-      <div class="marco"><span>TARJETA</span></div>
-      <div class="fantasma"><span>VIDEO</span></div>
+    <div class="marco" id="marcoGuia"><span>TARJETA</span></div>
+    <div class="info" id="guiaInfo">
+      <p id="guiaTexto">Ubica la tarjeta en el recuadro</p>
+      <button class="secundario" id="guiaDemo" hidden>¿No la reconoce? Ver sin tarjeta</button>
     </div>
-    <p id="guiaTexto">Ubica la tarjeta en el recuadro</p>
-    <button class="secundario" id="guiaDemo" hidden>¿No la reconoce? Ver sin tarjeta</button>
   </div>
 
   <div class="arriba" id="arriba" hidden>
@@ -164,10 +227,7 @@
   <div class="abajo" id="abajo" hidden>
     <span class="mensaje" id="mensaje"></span>
     <div class="fila">
-      <button class="principal" id="verReal" hidden>Ver a tamaño real en tu espacio</button>
-    </div>
-    <div class="fila">
-      <button class="secundario" id="escala" hidden>Tamaño real sobre la tarjeta</button>
+      <button class="principal" id="verReal" hidden>Ver a tamaño real</button>
       <button class="secundario" id="repetir" hidden>Repetir video</button>
       <button class="secundario" id="volver" hidden>Volver a la tarjeta</button>
     </div>
@@ -184,7 +244,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116h';
+    const VERSION = '20261116j';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -207,7 +267,6 @@
       catch (e) { console.warn('tarjetas.json', e); }
       if (t.nombre) {
         document.title = t.nombre + ' · Innercia AR';
-        $('etiquetaInicio').textContent = t.nombre;
         $('marca').innerHTML = '';
         $('marca').append(Object.assign(document.createElement('b'), { textContent: t.nombre }), ' · AR');
       }
@@ -227,7 +286,7 @@
     })();
     const escena = $('escena'), video = $('video'), mv = $('mv');
 
-    // ── Presentación de cada tarjeta (se elige en el paso 8 de Flujo AR) ────────────────────────
+    // ── Presentación de cada tarjeta (se elige en el paso «Tarjetas AR» de Flujo AR) ────────────────────────
     // tarjetas.json puede traer, por tarjeta:
     //   "presentacion": { "tipo": "video", "archivo": "tarjetas/1/video.mp4", "version": "…" }
     //   "presentacion": { "tipo": "pdf", "paginas": ["tarjetas/1/pagina-01.jpg", …], "segundos": 5, "version": "…" }
@@ -247,19 +306,43 @@
     const contenido = new THREE.Group();
 
     // ── Presentación por etapas ─────────────────────────────────────────────────────────────────
-    // Cada panel se ubica por su esquina SUPERIOR IZQUIERDA (x, y) y su ancho, medidos en «anchos de tarjeta»
-    // desde el centro de la tarjeta (la tarjeta va de x −0.5 a 0.5, y de y +ALTO/2 arriba a −ALTO/2 abajo).
-    //   entra   = segundo en que aparece, contado desde que se reconoce la tarjeta. Orden pedido: logo → quiénes
-    //             somos → video → servicios. El video empieza a reproducirse en su propio segundo, no antes.
-    //   entrada = 'derecha' (sale de detrás de la tarjeta) · 'abajo' (se despliega como persiana) · 'aparecer'
-    // Para cambiar un panel basta reemplazar su imagen (PNG con transparencia) con el mismo nombre.
-    const PEGADO = 0.03;                       // separación entre la tarjeta y el video
-    const altoVideo = () => PANELES[0].caja ? PANELES[0].caja.h : PANELES[0].ancho * 9 / 16;
+    // DOS DISPOSICIONES (diseño del usuario, 16/11/2026), una para el celular parado y otra para el celular acostado,
+    // pensadas para llenar la pantalla. Todo se mide en «anchos de tarjeta» desde el centro de la tarjeta (la tarjeta
+    // va de x −0.5 a 0.5, y de y +ALTO/2 arriba a −ALTO/2 abajo). Como el contenido va pegado a la tarjeta, acercar
+    // el celular lo agranda y alejarlo lo achica: con la tarjeta en el recuadro de la guía, llena la pantalla.
+    //   marco   = lo que debe caber en la pantalla; de ahí sale dónde pide la guía poner la tarjeta (colocarGuia)
+    //   x, y    = esquina SUPERIOR IZQUIERDA.  ancho = ancho fijo (el alto sale de la imagen).
+    //   w, h    = caja: el video, el PDF o la pieza caben dentro sin deformarse, centrados
+    //   entra   = segundo en que aparece, contado desde que se reconoce la tarjeta
+    //   entrada = 'derecha' (sale desde su borde izquierdo) · 'abajo' (se despliega como persiana) · 'aparecer'
+    // Parado:   logo → video o PDF → descripción y, a su lado, la pieza 3D → línea de contacto bajo la tarjeta
+    // Acostado: logo → video o PDF → descripción → pieza 3D → línea de contacto
+    const DISPOSICION = {
+      vertical: {
+        marco:       { l: -2.1, r: 2.1, t: 6.05, b: -2.2 },
+        logo:        { x: -1.2,  y: 5.9,  ancho: 2.4,       entra: 0,   entrada: 'aparecer' },
+        video:       { x: -1.97, y: 5.05, w: 3.94, h: 2.3,  entra: 1.2, entrada: 'aparecer' },
+        descripcion: { x: -1.97, y: 2.6,  w: 2.42, h: 1.3,  entra: 3,   entrada: 'abajo' },
+        pieza:       { x: 0.55,  y: 2.65, w: 1.42, h: 1.4,  entra: 3 },
+        quienes:     { x: -1.1,  y: -ALTO / 2, ancho: 2.2,  entra: 4.5, entrada: 'abajo' },
+      },
+      horizontal: {
+        marco:       { l: -1.3, r: 7.5, t: 2.15, b: -2.12 },
+        logo:        { x: -0.95, y: 1.98, ancho: 2.2,       entra: 0,   entrada: 'aparecer' },
+        video:       { x: 0.75,  y: 1.3,  w: 4.9,  h: 2.85, entra: 1.2, entrada: 'derecha' },
+        descripcion: { x: 5.8,   y: -0.3, w: 1.65, h: 1.25, entra: 3,   entrada: 'abajo' },
+        pieza:       { x: 5.8,   y: 1.75, w: 1.65, h: 1.85, entra: 4 },
+        quienes:     { x: -1.1,  y: -ALTO / 2, ancho: 2.2,  entra: 5.2, entrada: 'abajo' },
+      },
+    };
+    let disp = DISPOSICION.vertical;
+    // El video va primero (el código lo busca como PANELES[0]). «descripcion» y «quienes» se dibujan aquí mismo
+    // en un lienzo (dibujarPaneles), con la tipografía de la tarjeta: no son imágenes fijas.
     const PANELES = [
-      { id: 'video',     video: true,                   x: 0.5 + PEGADO, y: ALTO / 2,                            ancho: 1.8,  entra: 4, entrada: 'derecha', opacidad: OPACIDAD },
-      { id: 'logo',      imagen: 'panel-logo.png',      x: -0.5,         y: ALTO / 2 + 0.38,                     ancho: 1.0,  entra: 0,   entrada: 'aparecer' },
-      { id: 'quienes',   imagen: 'panel-quienes.png',   x: -0.1,         y: -ALTO / 2 + 0.1,                     ancho: 1.7,  entra: 2,   entrada: 'abajo' },
-      { id: 'servicios', imagen: 'panel-servicios.png', x: 0.5 + PEGADO, y: () => ALTO / 2 - altoVideo() - 0.09, ancho: 1.25, entra: 6,   entrada: 'abajo' },   // más adelante: descripción y medidas técnicas del exhibidor
+      { id: 'video',       video: true, opacidad: OPACIDAD },
+      { id: 'logo',        imagen: 'panel-logo.png' },
+      { id: 'quienes',     lienzo: document.createElement('canvas') },
+      { id: 'descripcion', lienzo: document.createElement('canvas') },
     ];
 
     const grupoVideo = new THREE.Group();      // toda la presentación (video + paneles)
@@ -270,7 +353,7 @@
     PANELES.forEach((def, i) => {
       def.aspecto = 2;
       def.z = 0.01 + i * 0.002;
-      def.tex = def.video ? texVideo : cargadorImg.load(def.imagen + '?v=' + VERSION, t => {
+      def.tex = def.video ? texVideo : def.lienzo ? new THREE.CanvasTexture(def.lienzo) : cargadorImg.load(def.imagen + '?v=' + VERSION, t => {
         def.aspecto = t.image.width / t.image.height;
         colocarVideo();
       });
@@ -293,24 +376,102 @@
     grupoPieza.add(giro);
     grupoPieza.visible = false;
     contenido.add(grupoPieza);
-    let pieza = null, escalaMini = 1, piezaInfo = null;
+    let pieza = null, piezaInfo = null;
 
+    // ── Paneles dibujados: descripción de la pieza y línea de contacto ──────────────────────────
+    // Los textos salen de tarjetas.json (se escriben en Flujo AR): "nombre" («Campaña · Pieza») y "descripcion".
+    const textos = { campana: '', pieza: '', descripcion: '', contacto: ['(+57) (601) 742 19 09', 'contacto@innercia.net'] };
+    const DESCRIPCION_BASE = 'Diseño bien pensado.\nToca la pieza para verla a tamaño real en tu espacio.';
+    function dibujarPaneles() {
+      // Línea que baja de la tarjeta y, debajo, el contacto
+      {
+        const def = PANELES.find(p => p.id === 'quienes'), c = def.lienzo, W = 1024, H = 540, g = c.getContext('2d');
+        if (c.width !== W || c.height !== H) { c.width = W; c.height = H; def.tex.dispose(); }
+        g.clearRect(0, 0, W, H);
+        g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 14;
+        g.strokeStyle = '#fff'; g.lineWidth = 9; g.lineCap = 'butt';
+        g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H * 0.44); g.stroke();
+        g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = '300 74px Ubuntu, "Segoe UI", system-ui, sans-serif';
+        textos.contacto.slice(0, 2).forEach((linea, i) => g.fillText(linea, W / 2, H * (0.635 + i * 0.215), W - 40));
+        def.aspecto = W / H; def.tex.needsUpdate = true;
+      }
+      // Descripción y medidas de la pieza, sobre el azul de la tarjeta. El lienzo tiene la forma de su caja.
+      {
+        const def = PANELES.find(p => p.id === 'descripcion'), d = disp.descripcion, c = def.lienzo, g = c.getContext('2d');
+        const W = Math.round(d.w * 440), H = Math.round(d.h * 440), margen = Math.round(H * 0.11);
+        if (c.width !== W || c.height !== H) { c.width = W; c.height = H; def.tex.dispose(); }      // otra forma: textura nueva
+        g.clearRect(0, 0, W, H);
+        g.fillStyle = 'rgba(0, 92, 126, .93)'; g.fillRect(0, 0, W, H);
+        g.fillStyle = '#93C01F'; g.fillRect(0, 0, Math.round(W * 0.018), H);          // filete verde a la izquierda
+        const titulo = (textos.pieza || 'Tu exhibidor').toUpperCase(), cuerpo = (textos.descripcion || DESCRIPCION_BASE).split(/\r?\n/);
+        const fuente = (peso, px) => `${peso} ${px}px Ubuntu, "Segoe UI", system-ui, sans-serif`;
+        const ancho = W - margen * 2 - W * 0.018;
+        // Parte en renglones lo que no quepa; si el total no cabe en el alto, se achica la letra y se intenta otra vez
+        const partir = (texto, px, peso) => {
+          g.font = fuente(peso, px);
+          const renglones = []; let actual = '';
+          for (const palabra of texto.split(/\s+/).filter(Boolean)) {
+            const prueba = actual ? actual + ' ' + palabra : palabra;
+            if (actual && g.measureText(prueba).width > ancho) { renglones.push(actual); actual = palabra; } else actual = prueba;
+          }
+          renglones.push(actual);
+          return renglones;
+        };
+        let px = H * 0.118, lt, lc;
+        for (let i = 0; i < 14; i++, px *= 0.93) {
+          lt = partir(titulo, px * 1.18, 700); lc = cuerpo.flatMap(r => r.trim() ? partir(r, px, 300) : ['']);
+          if (lt.length * px * 1.18 * 1.2 + px * 0.5 + lc.length * px * 1.36 <= H - margen * 2) break;
+        }
+        const x = margen + W * 0.018; let y = margen;
+        g.textAlign = 'left'; g.textBaseline = 'top';
+        g.fillStyle = '#93C01F'; g.font = fuente(700, px * 1.18);
+        for (const r of lt) { g.fillText(r, x, y); y += px * 1.18 * 1.2; }
+        y += px * 0.5;
+        g.fillStyle = '#fff'; g.font = fuente(300, px);
+        for (const r of lc) { g.fillText(r, x, y); y += px * 1.36; }
+        def.aspecto = W / H; def.tex.needsUpdate = true;
+      }
+    }
+    // La tipografía llega después que la página: se vuelve a dibujar cuando esté
+    if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('300 40px Ubuntu'), document.fonts.load('700 40px Ubuntu')]).then(() => colocarVideo()).catch(() => {});
+
+    // Aplica la disposición que corresponde a cómo está el celular (parado o acostado) y ubica todo
     function colocarVideo() {
+      disp = DISPOSICION[innerWidth > innerHeight ? 'horizontal' : 'vertical'];
+      dibujarPaneles();
       PANELES[0].aspecto = diapos.activo ? diapos.aspecto : (video.videoWidth || 16) / (video.videoHeight || 9);
-      limites = new THREE.Box3(new THREE.Vector3(-0.5, -ALTO / 2, 0), new THREE.Vector3(0.5, ALTO / 2, 0));
       for (const def of PANELES) {
-        const w = def.ancho, h = w / def.aspecto, l = def.x, t = typeof def.y === 'function' ? def.y() : def.y;
+        const d = disp[def.id];
+        def.entra = d.entra; def.entrada = d.entrada;
+        let w, h, l = d.x, t = d.y;
+        if (d.h) { w = Math.min(d.w, d.h * def.aspecto); h = w / def.aspecto; l += (d.w - w) / 2; t -= (d.h - h) / 2; }
+        else { w = d.ancho; h = w / def.aspecto; }
         def.caja = { l, t, w, h };
-        limites.union(new THREE.Box3(new THREE.Vector3(l, t - h, 0), new THREE.Vector3(l + w, t, 0)));
       }
       const v = PANELES[0].caja;
       barra.position.set(v.l, v.t - v.h - 0.03, 0.012);
       barra.userData.ancho = v.w;
       barra.scale.set(0.001, 0.02, 1);
+      colocarPieza();
+      colocarGuia();
       encuadrarDemo();
     }
     video.addEventListener('loadedmetadata', colocarVideo);
-    addEventListener('resize', colocarVideo);       // reencuadra la vista sin cámara
+    addEventListener('resize', colocarVideo);       // otra forma de pantalla: se reubica todo
+
+    // Dónde pide la guía poner la tarjeta: el «marco» de la disposición se ajusta a la pantalla (dejando libres las
+    // franjas de los botones) y de ahí sale el lugar de la tarjeta. Con la tarjeta ahí, todo cabe.
+    function colocarGuia() {
+      const m = disp.marco, W = innerWidth, H = innerHeight, acostada = W > H;
+      const sup = acostada ? 6 : 44, inf = acostada ? 8 : 58;
+      const s = Math.min(W / (m.r - m.l), (H - sup - inf) / (m.t - m.b));
+      const cx = W / 2 - (m.l + m.r) / 2 * s, cy = sup + (H - sup - inf) / 2 + (m.t + m.b) / 2 * s;
+      const marco = $('marcoGuia').style, info = $('guiaInfo').style;
+      marco.left = cx - s / 2 + 'px'; marco.top = cy - ALTO * s / 2 + 'px'; marco.width = s + 'px'; marco.height = ALTO * s + 'px';
+      if (acostada) { info.left = cx + s / 2 + 12 + 'px'; info.right = ''; info.width = ''; info.top = cy - 24 + 'px'; info.bottom = ''; }
+      else { info.left = '0'; info.width = '100%'; info.top = ''; info.bottom = H - (cy - ALTO * s / 2) + 14 + 'px'; }
+    }
 
     // ── Pieza 3D ────────────────────────────────────────────────────────────────────────────────
     async function buscarPieza() {
@@ -322,11 +483,33 @@
       const m = def && (def.modelos.find(x => x.id === id) || def.modelos[0]);
       if (!m) throw new Error('No existe la pieza ' + coleccion + '/' + id);
       const abs = (rel, v) => { const u = new URL(encodeURI(rel), RAIZ); if (v) u.searchParams.set('v', v); return u.href; };
-      return { nombre: m.nombre, glb: abs(m.archivo, m.version), usdz: m.usdz ? abs(m.usdz, m.version) : null };
+      return { nombre: m.nombre, campana: def.titulo || coleccion, exposicion: def.exposicion,
+               glb: abs(m.archivo, m.version), usdz: m.usdz ? abs(m.usdz, m.version) : null };
     }
 
+    // Pantalla de inicio: nombres arriba y la pieza girando en el recuadro (con la misma luz del visor normal).
+    // El nombre de la tarjeta («Campaña · Pieza», se escribe en Flujo AR) manda; sin él, los nombres de las carpetas.
+    const piezaLista = buscarPieza();
+    piezaLista.then(async info => {
+      const t = await tarjetaLista;
+      const partes = String(t.nombre || '').split('·').map(x => x.trim()).filter(Boolean);
+      const limpio = s => String(s || '').replace(/^\d+[_\-\s]+/, '').replace(/_/g, ' ').trim() || s;
+      $('tituloCampana').textContent = textos.campana = partes.length > 1 ? partes[0] : info.campana;
+      $('tituloPieza').textContent = textos.pieza = partes.length > 1 ? partes.slice(1).join(' · ') : partes[0] || limpio(info.nombre);
+      textos.descripcion = String(t.descripcion || '').trim();
+      colocarVideo();                                   // vuelve a dibujar el panel de descripción con estos textos
+      if (typeof info.exposicion === 'number') mv.setAttribute('exposure', info.exposicion);
+      if (info.usdz) mv.setAttribute('ios-src', info.usdz);
+      mv.setAttribute('src', info.glb);
+      mv.setAttribute('alt', info.nombre);
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.2.0/dist/model-viewer.min.js';
+      document.head.appendChild(s);
+    }).catch(e => console.warn('pieza de inicio', e));
+
     async function cargarPieza() {
-      piezaInfo = await buscarPieza();
+      piezaInfo = await piezaLista;
       const cargador = new GLTFLoader();
       cargador.setDRACOLoader(new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/'));
       cargador.setMeshoptDecoder(MeshoptDecoder);
@@ -337,38 +520,30 @@
       pieza.position.set(-centro.x, -caja.min.y, -centro.z);      // apoyada en su base y centrada
       giro.add(pieza);
       grupoPieza.userData.tam = tam;
-      // La miniatura cabe en la tarjeta: ni más alta que ella ni mucho más ancha
-      escalaMini = Math.min(ALTO * 0.9 / tam.y, 1.8 / Math.hypot(tam.x, tam.z));
-      aplicarEscala();
-      // El AR a tamaño real lo hace el mismo componente del visor (se carga aparte para no frenar el arranque)
-      if (piezaInfo.usdz) mv.setAttribute('ios-src', piezaInfo.usdz);
-      mv.setAttribute('src', piezaInfo.glb);
-      mv.setAttribute('alt', piezaInfo.nombre);
-      const s = document.createElement('script');
-      s.type = 'module';
-      s.src = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.2.0/dist/model-viewer.min.js';
-      document.head.appendChild(s);
+      colocarPieza();
+      // (El AR a tamaño real lo hace <model-viewer>, que ya se cargó para la pantalla de inicio)
     }
 
-    function aplicarEscala() {
-      // La pieza queda DE PIE con la tarjeta de frente a la cámara: su «arriba» es el arriba de la tarjeta y su
-      // frente mira hacia quien la sostiene. (Antes se paraba sobre la cara de la tarjeta, para dejarla en una mesa
-      // y rodearla; en esos ángulos tan inclinados la cámara pierde la tarjeta, así que se cambió el 16/11/2026.)
-      // Se gira arrastrando un dedo (ver «Toques»).
-      const e = grupoPieza.userData.escala = tamanoReal ? 1 / ANCHO_M : escalaMini;      // tamaño verdadero o miniatura
-      const tam = grupoPieza.userData.tam || new THREE.Vector3(1, 1, 1);
+    // La pieza va dentro de la presentación, en su caja de la disposición (al lado o encima de la descripción):
+    // DE PIE, de frente a quien mira la tarjeta, apoyada en el borde de abajo de la caja, y girando sola.
+    // Se le da el tamaño con el que cabe en la caja en cualquier punto de la vuelta (por eso se mide su diagonal).
+    function colocarPieza() {
+      const d = disp.pieza, tam = grupoPieza.userData.tam || new THREE.Vector3(1, 1, 1);
+      const diagonal = Math.hypot(tam.x, tam.z);
+      const e = grupoPieza.userData.escala = Math.min(d.h / tam.y, d.w / diagonal) * 0.96;
       grupoPieza.rotation.set(0, 0, 0);
-      // Centrada en la tarjeta (si es más alta que la tarjeta, apoyada en su borde inferior) y un poco hacia
-      // adelante, para que al girarla no atraviese la tarjeta
-      grupoPieza.position.set(0, -Math.min(tam.y * e, ALTO) / 2, Math.hypot(tam.x, tam.z) * e / 2 + 0.02);
+      // Un poco hacia adelante, para que al girar no atraviese el plano de la tarjeta
+      grupoPieza.position.set(d.x + d.w / 2, d.y - d.h + (d.h - tam.y * e) / 2, diagonal * e / 2 + 0.02);
       grupoPieza.scale.setScalar(e);
-      $('escala').textContent = tamanoReal ? 'Volver a la miniatura' : 'Tamaño real sobre la tarjeta';
     }
 
     // ── Estados ─────────────────────────────────────────────────────────────────────────────────
-    let tAparicion = 0, videoArranco = false;
+    // La presentación ya no termina mostrando la pieza aparte: todo queda a la vista (logo, video o PDF, descripción,
+    // pieza y contacto). Empieza de cero cada vez que se reconoce la tarjeta desde «buscando»: al comenzar, al
+    // voltear el celular (ver «Girar el celular») y al volver del AR a tamaño real.
+    let tAparicion = 0, videoArranco = false, videoTermino = false, botonReal = false;
     function mostrarVideo() {
-      videoArranco = false;
+      videoArranco = videoTermino = botonReal = false;
       video.pause();
       estado = 'video';
       grupoPieza.visible = false;
@@ -376,7 +551,7 @@
       tAparicion = performance.now();
       video.currentTime = 0;
       diapos.t = 0;
-      $('verReal').hidden = $('escala').hidden = $('repetir').hidden = true;
+      $('verReal').hidden = $('repetir').hidden = $('volver').hidden = true;
       $('mensaje').textContent = '';
     }
 
@@ -397,8 +572,6 @@
         const v = PANELES[0];
         if (params_('opacidad') === null) v.opacidad = 0.95;       // un documento se lee mal si es transparente
         v.tex = diapos.texturas[0]; v.malla.material.map = v.tex; diapos.i = 0;
-        $('repetir').textContent = 'Repetir presentación';
-        document.querySelector('.guia .fantasma span').textContent = 'PRESENTACIÓN';
         return;
       }
       video.src = p && p.tipo === 'video' && p.archivo ? direccion(p.archivo) : 'video.mp4?v=' + VERSION;
@@ -415,25 +588,15 @@
       });
     }
 
-    function mostrarPieza() {
-      estado = 'pieza';
-      videoVisto = true;
+    // El video terminó: se queda en su último cuadro, con todo lo demás a la vista, y se ofrece repetirlo.
+    // (El PDF no termina: sus páginas vuelven a empezar solas.)
+    video.addEventListener('ended', () => {
+      videoTermino = true;
       video.classList.remove('flotante');
-      if (!visible && !modoDemo) pista('Apunta a la tarjeta para ubicar la pieza sobre ella');
-      grupoVideo.visible = false;
-      tAparicion = performance.now();
-      if (!pieza) { $('mensaje').textContent = 'Cargando la pieza…'; return; }
-      grupoPieza.visible = true;
-      const puedeAR = !!mv.canActivateAR;
-      $('mensaje').textContent = puedeAR ? 'Desliza un dedo para girarla · toca la pieza para verla a tamaño real'
-                                         : 'Este es tu exhibidor · ábrelo en un celular para verlo en tu espacio';
-      $('verReal').hidden = !puedeAR;
-      $('escala').hidden = modoDemo;
-      $('repetir').hidden = false;
-    }
-    video.addEventListener('ended', mostrarPieza);
+      if (estado === 'video') $('repetir').hidden = false;
+    });
 
-    let videoVisto = false, relojPerdida;
+    let relojPerdida;
     function pista(texto) { $('pista').textContent = texto; $('pista').hidden = !texto; }
 
     function alEncontrar() {
@@ -443,8 +606,8 @@
       pista('');
       $('guia').hidden = true;
       $('abajo').hidden = false;
-      if (estado === 'buscando') { if (videoVisto) mostrarPieza(); else mostrarVideo(); }
-      else if (estado === 'video' && videoArranco && video.paused) reproducir();
+      if (estado === 'buscando') mostrarVideo();
+      else if (estado === 'video' && videoArranco && !videoTermino && video.paused) reproducir();
     }
     // La tarjeta salió de cuadro: nada se corta. El video sigue sonando y, si no vuelve enseguida, pasa a verse
     // en la pantalla; al reencontrar la tarjeta regresa a su lugar junto a ella.
@@ -455,7 +618,7 @@
       relojPerdida = setTimeout(() => {
         if (visible) return;
         if (estado === 'video' && !videoArranco) pista('Apunta a la tarjeta y acércala un poco');
-        else if (estado === 'video' && diapos.activo) pista('Apunta a la tarjeta para seguir viendo la presentación');
+        else if (estado === 'video' && (diapos.activo || videoTermino)) pista('Apunta a la tarjeta para seguir viendo la presentación');
         else if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta y acércala un poco para verlo junto a ella'); }
         else if (estado === 'pieza') pista('La pieza se queda aquí: gírala con el dedo o vuelve a apuntar a la tarjeta');
       }, aguante());
@@ -472,7 +635,7 @@
       estado = 'ar';
       $('guia').hidden = true;
       $('mensaje').textContent = '¿Quieres ver la presentación otra vez?';
-      $('verReal').hidden = false; $('escala').hidden = true; $('repetir').hidden = true; $('volver').hidden = modoDemo;
+      $('verReal').hidden = false; $('repetir').hidden = true; $('volver').hidden = modoDemo;
       mv.activateAR();
     }
 
@@ -681,9 +844,10 @@
       const w = escena.clientWidth, h = escena.clientHeight;
       renderer.setSize(w, h);
       camera.aspect = w / h;
-      const tam = limites.getSize(new THREE.Vector3()), centro = limites.getCenter(new THREE.Vector3());
+      // Se encuadra el «marco» de la disposición: lo mismo que se ve con la tarjeta puesta en el recuadro de la guía
+      const m = disp.marco, tam = new THREE.Vector3(m.r - m.l, m.t - m.b, 0), centro = new THREE.Vector3((m.l + m.r) / 2, (m.t + m.b) / 2, 0);
       const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-      const d = Math.max(tam.y / 2 / t, tam.x / 2 / (t * camera.aspect)) * 1.35;
+      const d = Math.max(tam.y / 2 / t, tam.x / 2 / (t * camera.aspect)) * 1.12;
       camera.position.set(centro.x, centro.y, d);
       camera.lookAt(centro.x, centro.y, 0);
       camera.updateProjectionMatrix();
@@ -956,7 +1120,8 @@
         }
       }
       medidor.cuadros++;
-      const k = suave((ahora - tAparicion) / 600);
+      // Tras reiniciar la cámara (al voltear el celular) MindAR no siempre avisa que volvió a ver la tarjeta
+      if (estado === 'buscando' && !modoDemo && !visible && anclaGrupo && anclaGrupo.visible) alEncontrar();
       if (grupoVideo.visible) {
         // Presentación por etapas: cada panel entra en su segundo («entra»), contado desde que arrancó el video
         const tPres = (ahora - tAparicion) / 1000;
@@ -973,7 +1138,7 @@
           } else if (def.entrada === 'abajo') {
             // Se despliega hacia abajo, como una persiana
             m.scale.set(c.w, c.h * e, 1); m.position.set(c.l + c.w / 2, c.t - c.h * e / 2, def.z);
-            def.tex.repeat.set(1, e); def.tex.offset.set(0, 0); m.material.opacity = op * Math.min(1, d * 3);
+            def.tex.repeat.set(1, e); def.tex.offset.set(0, 1 - e); m.material.opacity = op * Math.min(1, d * 3);
           } else {
             // Aparece suave, subiendo un poco
             m.scale.set(c.w, c.h, 1); m.position.set(c.l + c.w / 2, c.t - c.h / 2 - (1 - d) * 0.1, def.z);
@@ -985,25 +1150,31 @@
         marcoVideo.visible = v.malla.visible;
         barra.visible = tPres > v.entra + 1.1;
         if (diapos.activo) {
-          // PDF: cada página se queda «segundos» y pasa a la siguiente; el reloj solo corre con la tarjeta a la vista
+          // PDF: cada página se queda «segundos» y pasa a la siguiente; al llegar a la última vuelve a empezar.
+          // El reloj solo corre con la tarjeta a la vista.
           if (estado === 'video' && videoArranco && (visible || modoDemo)) diapos.t += dt / 1000;
           const total = diapos.texturas.length * diapos.segundos;
+          if (diapos.t >= total) diapos.t -= total;
           const i = Math.min(diapos.texturas.length - 1, Math.floor(diapos.t / diapos.segundos));
           if (i !== diapos.i) { diapos.i = i; v.tex = diapos.texturas[i]; v.malla.material.map = v.tex; }
           barra.scale.x = Math.max(0.001, barra.userData.ancho * Math.min(1, diapos.t / total));
-          if (estado === 'video' && diapos.t >= total) mostrarPieza();
         } else
         if (video.duration) barra.scale.x = Math.max(0.001, barra.userData.ancho * video.currentTime / video.duration);
-      }
-      if (grupoPieza.visible) {
-        grupoPieza.scale.setScalar(Math.max(0.001, k) * grupoPieza.userData.escala);
-        if (modoDemo && !giroManual) giro.rotation.y += dt / 1000 * 0.6;      // en la demostración gira sola hasta que se toca
-      }
+
+        // La pieza entra en su momento, creciendo, y gira sola todo el tiempo (salvo mientras se arrastra con el dedo)
+        const dp = suave((tPres - disp.pieza.entra) / 0.9);
+        grupoPieza.visible = !!pieza && dp > 0;
+        if (grupoPieza.visible) {
+          grupoPieza.scale.setScalar(Math.max(0.001, dp) * grupoPieza.userData.escala);
+          if (xArrastre === null) giro.rotation.y += dt / 1000 * 0.7;
+          if (!botonReal && estado === 'video') { botonReal = true; $('verReal').hidden = !mv.canActivateAR; }
+        }
+      } else grupoPieza.visible = false;
       if (modoDemo) {
         // Leve vaivén para que se note el volumen
-        const inclinada = estado === 'pieza' ? -0.12 : Math.sin(ahora / 3100) * 0.06;
-        mundoDemo.rotation.x += (inclinada - mundoDemo.rotation.x) * 0.08;
-        mundoDemo.rotation.y = estado === 'pieza' ? 0 : Math.sin(ahora / 2200) * 0.22;
+        // (muy leve: la presentación ahora llega lejos de la tarjeta y un vaivén grande la sacaría de la pantalla)
+        mundoDemo.rotation.x = Math.sin(ahora / 3100) * 0.02;
+        mundoDemo.rotation.y = Math.sin(ahora / 2200) * 0.05;
       }
       renderer.render(scene, camera);
     }
@@ -1014,7 +1185,7 @@
     let toque0 = null, xArrastre = null, giroManual = false;
     escena.addEventListener('pointerdown', e => { toque0 = [e.clientX, e.clientY]; xArrastre = e.clientX; });
     escena.addEventListener('pointermove', e => {
-      if (xArrastre === null || estado !== 'pieza' || !grupoPieza.visible) return;
+      if (xArrastre === null || !grupoPieza.visible) return;
       if (!giroManual && Math.abs(e.clientX - toque0[0]) < 8) return;
       giroManual = true;
       giro.rotation.y += (e.clientX - xArrastre) * 0.012;
@@ -1023,7 +1194,7 @@
     for (const fin of ['pointerup', 'pointercancel', 'pointerleave']) escena.addEventListener(fin, () => { xArrastre = null; });
     escena.addEventListener('pointerup', e => {
       if (!toque0 || Math.hypot(e.clientX - toque0[0], e.clientY - toque0[1]) > 12) return;
-      if (estado !== 'pieza' || !grupoPieza.visible) return;
+      if (estado !== 'video' || !grupoPieza.visible) return;
       const r = renderer.domElement.getBoundingClientRect();
       rayo.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
       if (rayo.intersectObject(grupoPieza, true).length) verReal();
@@ -1036,13 +1207,16 @@
     }
 
     async function comenzar(demo) {
+      // La pieza de la pantalla de inicio deja de girar y queda oculta, lista para abrir el AR a tamaño real
+      for (const a of ['auto-rotate', 'camera-controls', 'autoplay']) mv.removeAttribute(a);
+      document.body.appendChild(mv);
       $('inicio').hidden = true;
       pedirGiroscopio();
       // Dentro del toque: «despierta» el video para que después pueda sonar solo cuando aparezca la tarjeta
       // (si tarjetas.json aún no llegó, se prepara apenas llegue; lo normal es que ya esté)
       if (tarjetaLeida) prepararPresentacion(); else tarjetaLista.then(prepararPresentacion);
-      cargarPieza().then(() => { if (estado === 'pieza') mostrarPieza(); })
-                   .catch(e => { console.error(e); avisar('No se pudo cargar la pieza 3D.'); });
+      colocarVideo();                                   // disposición y guía para la forma actual de la pantalla
+      cargarPieza().catch(e => { console.error(e); avisar('No se pudo cargar la pieza 3D.'); });
       if (demo) { iniciarDemo(); return; }
       try { await iniciarCamara(); }
       catch (e) {
@@ -1054,12 +1228,30 @@
 
     // ── Girar el celular ────────────────────────────────────────────────────────────────────────
     // La cámara entrega otra imagen (acostada o parada): el seguimiento se reinicia para tomar la nueva medida.
-    // El video y el estado siguen como iban.
+    // La presentación SIEMPRE vuelve a empezar, ya con la disposición de la nueva posición (parado o acostado):
+    // así quien la mira elige en qué formato verla. Se recoge todo, vuelve la guía (que ahora marca el lugar de
+    // la tarjeta para ese formato) y arranca de cero cuando se reconoce la tarjeta.
     let acostado = innerWidth > innerHeight, girando = false;
     addEventListener('resize', async () => {
       const ahora = innerWidth > innerHeight;
       if (ahora === acostado) return;
       acostado = ahora;
+      colocarVideo();
+      if (estado === 'video') {
+        if (modoDemo) mostrarVideo();
+        else {
+          video.pause();
+          video.classList.remove('flotante');
+          clearTimeout(relojPerdida);
+          pista('');
+          grupoVideo.visible = grupoPieza.visible = false;
+          $('verReal').hidden = $('repetir').hidden = true;
+          estado = 'buscando';
+          visible = false;
+          if (anclaGrupo) anclaGrupo.visible = false;       // hasta la primera lectura con la cámara ya girada
+          $('guia').hidden = false;
+        }
+      }
       if (!mindar || modoDemo || girando || estado === 'inicio' || estado === 'ar') return;
       girando = true;
       await reiniciarCamara();
@@ -1081,11 +1273,10 @@
     $('verReal').onclick = verReal;
     $('volver').onclick = volver;
     $('repetir').onclick = mostrarVideo;
-    $('escala').onclick = () => { tamanoReal = !tamanoReal; aplicarEscala(); tAparicion = performance.now(); };
     $('sonido').onclick = () => { video.muted = false; $('sonido').hidden = true; };
 
     // Para revisar desde el computador
-    window.__tarjeta = { get estado() { return estado; }, diapos, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv, alPerder, alEncontrar,
+    window.__tarjeta = { get estado() { return estado; }, diapos, video, contenido, grupoPieza, grupoVideo, mostrarVideo, PANELES, DISPOSICION, textos, colocarVideo, mv, alPerder, alEncontrar,
       // Para simular el seguimiento sin cámara: un «ancla» falsa y eventos de giroscopio inventados
       prueba: { THREE, soporte, giroscopio, alMover, cuadro, ultimaPos, mejorarBusqueda, ayuda, ponerMotor(m) { mindar = m; }, ponerEstado(e) { estado = e; }, ponerAncla(g) { anclaGrupo = g; modoDemo = false; soporte.matrixAutoUpdate = false; }, reiniciar() { hayPose = false; giroscopio.hist.length = 0; giroscopio.q.identity(); giroscopio.t = 0; reiniciarGiroscopio(); } } };
   </script>

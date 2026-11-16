@@ -1816,7 +1816,7 @@ namespace FlujoAR
             {
                 if (!ok) { MostrarEstadoAnim("No se pudo preparar la prueba: " + msg, Rojo); VolverAlAnimador(); return; }
                 paginaPrueba = "pruebas/" + enlace + "/";
-                MostrarEstadoAnim("Abierta en tu navegador. Para el AR en los celulares: publica (paso 6) y escanea el QR de la derecha → " + UrlBase + paginaPrueba, Verde);
+                MostrarEstadoAnim("Abierta en tu navegador. Para el AR en los celulares: publica (paso 8) y escanea el QR de la derecha → " + UrlBase + paginaPrueba, Verde);
                 AbrirLocal(paginaPrueba);
                 VolverAlAnimador();
             });

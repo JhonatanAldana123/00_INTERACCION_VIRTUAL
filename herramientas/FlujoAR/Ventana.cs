@@ -39,8 +39,11 @@ namespace FlujoAR
         static readonly string[] Titulos =
         {
             "Preparar en Rhino", "Exportar .glb", "Optimizar o animar", "Revisar",
-            "Campañas", "Publicar", "Generar QR", "Tarjetas AR",
+            "Campañas", "Generar QR", "Tarjetas AR", "Publicar",
         };
+        // Los pasos 6 y 7 son las dos formas de entregar una campaña (se usa una o las dos); Publicar va al final
+        // y sube todo de una vez. Índices (empiezan en 0) de esos pasos:
+        const int IndiceQr = 5, IndiceTarjetas = 6, IndicePublicar = 7;
 
         readonly string raiz, carpetaModelos, rutaColecciones, carpetaQrs;
         readonly Servidor servidor = new Servidor();
@@ -102,6 +105,12 @@ namespace FlujoAR
             });
             for (int i = 0; i < Titulos.Length; i++)
             {
+                if (i == IndiceQr || i == IndicePublicar)
+                    lista.Controls.Add(new Label
+                    {
+                        Text = i == IndiceQr ? "ENTREGA · UNA O LAS DOS" : "AL FINAL", AutoSize = true, ForeColor = TextoTenue,
+                        Font = new Font("Segoe UI", 7.5f, FontStyle.Bold), Margin = new Padding(S(8), S(12), 0, S(6)),
+                    });
                 var b = new Button
                 {
                     Text = (i + 1) + "    " + Titulos[i], Tag = i, Width = S(208), Height = S(42),
@@ -150,7 +159,7 @@ namespace FlujoAR
             lblEstadoAnimVisible = null;
             // El animador necesita más espacio: la ventana crece solo mientras se usa
             AjustarTamano(i == 2 && modoAnimado);
-            if (i == 7) CrecerAlto(S(760));         // las tarjetas y su editor caben sin desplazar
+            if (i == IndiceTarjetas) CrecerAlto(S(850));         // las tarjetas y su editor caben sin desplazar
 
             contenido.SuspendLayout();
             foreach (var c in contenido.Controls.Cast<Control>().ToList()) c.Dispose();
@@ -165,9 +174,9 @@ namespace FlujoAR
                 case 2: PasoOptimizar(col); break;
                 case 3: PasoRevisar(col); break;
                 case 4: PasoCampanas(col); break;
-                case 5: PasoPublicar(col); break;
-                case 6: PasoQr(col); break;
-                case 7: PasoTarjetas(col); break;      // Tarjetas.cs
+                case IndiceQr: PasoQr(col); break;
+                case IndiceTarjetas: PasoTarjetas(col); break;      // Tarjetas.cs
+                case IndicePublicar: PasoPublicar(col); break;      // Publicar.cs
             }
             // El Padding del panel no se aplica a hijos sin Dock: el margen va en la posición
             col.Location = new Point(S(34), S(26));
@@ -479,7 +488,7 @@ namespace FlujoAR
                     return;
                 }
                 lblEstadoLuz.ForeColor = Verde;
-                lblEstadoLuz.Text = "Luz guardada para «" + c.Titulo + "». Se verá así en el QR después de publicar (paso 6).";
+                lblEstadoLuz.Text = "Luz guardada para «" + c.Titulo + "». Se verá así en el QR después de publicar (paso 8).";
                 mostrarLuz();
             };
 
@@ -487,7 +496,7 @@ namespace FlujoAR
             col.Controls.Add(Fila(barraLuz, lblLuz));
             col.Controls.Add(Fila(abrir, btnGuardarLuz));
             col.Controls.Add(lblEstadoLuz);
-            var nota = Texto("Mueve la luz y pulsa «Abrir en el navegador» para ver el cambio. Cuando te guste, guárdala: queda para toda la campaña. La vista previa funciona antes de publicar; para probar el AR hay que publicar (paso 6) y escanear el QR.");
+            var nota = Texto("Mueve la luz y pulsa «Abrir en el navegador» para ver el cambio. Cuando te guste, guárdala: queda para toda la campaña. La vista previa funciona antes de publicar; para probar el AR hay que publicar (paso 8) y escanear el QR.");
             nota.ForeColor = Gris;
             col.Controls.Add(nota);
             cargarLuz();
@@ -610,101 +619,6 @@ namespace FlujoAR
             }
         }
 
-        // ── Paso 6: Publicar ───────────────────────────────────────
-        void PasoPublicar(FlowLayoutPanel col)
-        {
-            col.Controls.Add(Texto("GitHub Pages solo publica lo que subes al repositorio. En GitHub Desktop:"));
-            col.Controls.Add(Texto("1.   Ábrelo con el botón de abajo.\n2.   Verás los cambios: las carpetas de las piezas nuevas (models\\…) y colecciones.json.\n3.   Escribe un mensaje abajo a la izquierda, por ejemplo: Campaña Alpina.\n4.   Haz clic en Commit to main y luego en Push origin.\n5.   Espera 1–2 minutos y pulsa «Verificar publicación»."));
-
-            var btnDesktop = Boton("Abrir GitHub Desktop", true);
-            btnDesktop.Click += (s, e) => AbrirGitHubDesktop();
-            col.Controls.Add(Fila(btnDesktop));
-
-            if (!CargarCampanas(col)) return;
-            var titulo = Etiqueta("Comprobar que ya está en línea");
-            titulo.Margin = new Padding(0, S(14), 0, S(4));
-            col.Controls.Add(titulo);
-
-            ComboBox cmbCampana, cmbPieza;
-            AgregarSelectores(col, false, null, out cmbCampana, out cmbPieza);
-            var btnVerificar = Boton("Verificar publicación", false);
-            var lblResultado = Estado();
-            btnVerificar.Click += (s, e) =>
-            {
-                var c = CampanaElegida(cmbCampana);
-                if (c != null) Verificar(c, btnVerificar, lblResultado);
-            };
-            col.Controls.Add(Fila(btnVerificar));
-            col.Controls.Add(lblResultado);
-        }
-
-        void Verificar(Coleccion c, Button boton, Label resultado)
-        {
-            boton.Enabled = false;
-            resultado.ForeColor = Gris;
-            resultado.Text = "Verificando en " + UrlBase + " …";
-            var piezas = c.Modelos.Select(m => new { m.Nombre, Local = RutaLocal(m), Web = UrlArchivo(m) }).ToList();
-            string paginaLimpia = Consulta(c, null);
-            if (paginaLimpia.StartsWith("?")) paginaLimpia = null;
-
-            new Thread(() =>
-            {
-                var lineas = new List<string>();
-                bool todoBien = true;
-                long remoto;
-                string texto;
-
-                foreach (var p in piezas)
-                {
-                    long local = File.Exists(p.Local) ? new FileInfo(p.Local).Length : -1;
-                    int codigo = Consultar(UrlBase + p.Web, "HEAD", out remoto, out texto);
-                    if (codigo == 200 && remoto == local) lineas.Add("✓  " + p.Nombre + " está publicada (" + MB(local) + ").");
-                    else if (codigo == 200)
-                    {
-                        todoBien = false;
-                        lineas.Add("⚠  " + p.Nombre + " está publicada, pero es otra versión. ¿Hiciste Push? Si ya lo hiciste, espera unos minutos.");
-                    }
-                    else
-                    {
-                        todoBien = false;
-                        lineas.Add(codigo == 404
-                            ? "✗  " + p.Nombre + " todavía no está publicada. Haz Commit y Push, y espera 1–2 minutos."
-                            : "✗  No se pudo consultar GitHub Pages (" + (codigo < 0 ? "sin conexión" : "código " + codigo) + ").");
-                    }
-                }
-
-                long ignorar;
-                if (paginaLimpia != null)
-                {
-                    int codPagina = Consultar(UrlBase + paginaLimpia + "index.html", "HEAD", out ignorar, out texto);
-                    if (codPagina == 200) lineas.Add("✓  La dirección " + UrlBase + paginaLimpia + " está publicada.");
-                    else
-                    {
-                        todoBien = false;
-                        lineas.Add("✗  La dirección " + UrlBase + paginaLimpia + " todavía no está publicada. Haz Commit y Push (incluye la carpeta " + paginaLimpia.TrimEnd('/') + "), y espera 1–2 minutos.");
-                    }
-                }
-
-                int cod = Consultar(UrlBase + "colecciones.json", "GET", out ignorar, out texto);
-                string localJson = File.Exists(rutaColecciones) ? File.ReadAllText(rutaColecciones, Encoding.UTF8) : "";
-                if (cod == 200 && Normalizar(texto) == Normalizar(localJson)) lineas.Add("✓  La lista de campañas (colecciones.json) está al día.");
-                else
-                {
-                    todoBien = false;
-                    lineas.Add("⚠  La lista de campañas (colecciones.json) en línea es distinta a la de tu computador. Haz Commit y Push, y espera 1–2 minutos.");
-                }
-
-                if (todoBien) lineas.Add("\nTodo listo: ya puedes generar el QR (paso 7).");
-                EnVentana(() =>
-                {
-                    if (boton.IsDisposed) return;
-                    boton.Enabled = true;
-                    resultado.ForeColor = todoBien ? Verde : Rojo;
-                    resultado.Text = string.Join("\n", lineas);
-                });
-            }) { IsBackground = true }.Start();
-        }
-
         // Devuelve el código HTTP (-1 sin conexión). El parámetro ?t= evita respuestas en caché.
         static int Consultar(string url, string metodo, out long largo, out string texto)
         {
@@ -755,7 +669,7 @@ namespace FlujoAR
         // Cuadrícula con una tarjeta por campaña. Cada tarjeta guarda su PNG o SVG y marca si ya está guardado.
         void PasoQr(FlowLayoutPanel col)
         {
-            col.Controls.Add(Texto("Tu catálogo de QR: uno por campaña, que abre todas sus piezas. Funcionan cuando la campaña ya está publicada (paso 6). PNG para impresión; SVG para PDF o Illustrator."));
+            col.Controls.Add(Texto("Tu catálogo de QR: uno por campaña, que abre todas sus piezas. PNG para impresión; SVG para PDF o Illustrator. El QR no cambia al publicar: puedes guardarlo ya, y empieza a funcionar cuando publiques (paso 8). ¿La campaña va solo en tarjeta? Sáltate este paso."));
             if (!CargarCampanas(col)) return;
 
             var btnTodos = Boton("Guardar todos (PNG y SVG)", true);
@@ -812,7 +726,7 @@ namespace FlujoAR
             t.Matriz = Qr.Codificar(url);
 
             var borde = Color.FromArgb(222, 225, 231);
-            var tarjeta = new Panel { Width = S(206), Height = S(268), BackColor = Color.FromArgb(247, 248, 250), Margin = new Padding(0, 0, S(12), S(12)) };
+            var tarjeta = new Panel { Width = S(206), Height = S(286), BackColor = Color.FromArgb(247, 248, 250), Margin = new Padding(0, 0, S(12), S(12)) };
             tarjeta.Paint += (s, e) =>
             {
                 using (var p = new Pen(borde)) e.Graphics.DrawRectangle(p, 0, 0, tarjeta.Width - 1, tarjeta.Height - 1);
@@ -844,6 +758,16 @@ namespace FlujoAR
                 Font = new Font(Font.FontFamily, 8.5f), Margin = new Padding(0, 0, 0, S(6)),
             };
             enlace.LinkClicked += (s, e) => Abrir(url);
+            // Atajo: llevar esta misma campaña a una tarjeta impresa, sin volver a elegirla en el paso 7
+            var aTarjeta = new LinkLabel
+            {
+                Text = "Poner en tarjeta", AutoSize = true, LinkBehavior = LinkBehavior.HoverUnderline, UseMnemonic = false,
+                Font = new Font(Font.FontFamily, 8.5f), Margin = new Padding(S(10), 0, 0, S(6)),
+            };
+            aTarjeta.LinkClicked += (s, e) => { campanaParaTarjeta = c.Clave; piezaParaTarjeta = m != null ? m.Id : null; IrA(IndiceTarjetas); };
+            enlace.Margin = new Padding(0, 0, 0, S(6));
+            var enlaces = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = Padding.Empty };
+            enlaces.Controls.AddRange(new Control[] { enlace, aTarjeta });
 
             var btnPng = BotonChico("PNG", true);
             var btnSvg = BotonChico("SVG", false);
@@ -871,7 +795,7 @@ namespace FlujoAR
             var botones = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = Padding.Empty };
             botones.Controls.AddRange(new Control[] { btnPng, btnSvg, estado });
 
-            interior.Controls.AddRange(new Control[] { imagen, nombre, detalle, enlace, botones });
+            interior.Controls.AddRange(new Control[] { imagen, nombre, detalle, enlaces, botones });
             tarjeta.Controls.Add(interior);
             t.Panel = tarjeta;
             t.Refrescar();

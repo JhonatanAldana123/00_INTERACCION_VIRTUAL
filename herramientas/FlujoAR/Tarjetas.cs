@@ -13,10 +13,10 @@ using System.Windows.Forms;
 
 namespace FlujoAR
 {
-    // Paso 8: Tarjetas AR.
+    // Paso 7: Tarjetas AR (la otra forma de entregar una campaña, junto al QR del paso 6; se publica en el paso 8).
     //
     // Las tarjetas impresas llevan un QR fijo (innerciaar.com/t/1 … t/4). Aquí se decide qué abre cada una:
-    // la campaña y la pieza (las mismas del paso 7), el nombre que ve el cliente, la dirección que queda en la
+    // la campaña y la pieza (las mismas del catálogo de QR), el nombre que ve el cliente, la dirección que queda en la
     // barra del navegador y la presentación que se reproduce sola antes de la pieza (un video o un PDF).
     //
     // Todo queda en tarjetas.json (raíz del proyecto). Los archivos de la presentación de cada tarjeta van en
@@ -29,6 +29,7 @@ namespace FlujoAR
         {
             public string Numero;
             public string Coleccion = "", Pieza = "", Nombre = "", Direccion = "";
+            public string Descripcion = "";         // texto del panel azul que sale junto a la pieza (renglones separados por \n)
             // Presentación guardada: "" = video general, "video" o "pdf"
             public string PresTipo = "", PresArchivo = "", PresVersion = "", PresOrigen = "";
             public List<string> PresPaginas = new List<string>();
@@ -38,7 +39,7 @@ namespace FlujoAR
         }
 
         const string MarcaPaginaTarjeta = "tarjeta-ar: página generada";
-        const string NotaTarjetas = "Qué abre cada tarjeta impresa. El QR de la tarjeta 1 siempre dice innerciaar.com/t/1; aquí se decide la pieza (coleccion y pieza, como en colecciones.json), el nombre que ve el cliente, la dirección que queda en la barra del navegador y la presentación (video o PDF). Se edita desde el paso 8 de Flujo AR (o a mano, y luego doble clic en ActualizarTarjetas.bat). Después se publica. No hay que reimprimir.";
+        const string NotaTarjetas = "Qué abre cada tarjeta impresa. El QR de la tarjeta 1 siempre dice innerciaar.com/t/1; aquí se decide la pieza (coleccion y pieza, como en colecciones.json), el nombre que ve el cliente, la dirección que queda en la barra del navegador y la presentación (video o PDF). Se edita desde el paso «Tarjetas AR» de Flujo AR (o a mano, y luego doble clic en ActualizarTarjetas.bat). Después se publica. No hay que reimprimir.";
         static readonly Regex ParteDireccion = new Regex(@"^[A-Za-z0-9_-]+$");
 
         string selTarjeta = "1";
@@ -46,7 +47,7 @@ namespace FlujoAR
 
         void PasoTarjetas(FlowLayoutPanel col)
         {
-            col.Controls.Add(Texto("Elige una tarjeta y decide qué campaña y pieza abre (las del paso 7) y qué se reproduce antes: un video o un PDF. El QR impreso no cambia. «Probar» la muestra sin cámara; con la tarjeta real se prueba en el celular, después de publicar."));
+            col.Controls.Add(Texto("Elige una tarjeta y decide qué campaña y pieza abre y qué se reproduce antes: un video o un PDF. El QR impreso de la tarjeta no cambia. «Probar» la muestra sin cámara; con la tarjeta real se prueba en el celular, después de publicar (paso 8). ¿La campaña va solo con QR? Sáltate este paso."));
             if (!CargarCampanas(col)) return;
 
             string errorLectura;
@@ -72,6 +73,7 @@ namespace FlujoAR
             };
             var mosaicos = new List<Panel>();
             Action<TarjetaAr> mostrar = null;
+            Action ponerCampana = null;         // atajo «Poner en tarjeta» del catálogo de QR
 
             foreach (var tarjeta in tarjetas)
             {
@@ -110,6 +112,7 @@ namespace FlujoAR
                     selTarjeta = t.Numero;
                     foreach (var m in mosaicos) m.Invalidate();
                     mostrar(t);
+                    if (ponerCampana != null) ponerCampana();
                 };
                 mosaicos.Add(mosaico);
                 fila.Controls.Add(mosaico);
@@ -124,6 +127,7 @@ namespace FlujoAR
             var txtNombre = new TextBox { Width = S(300), Margin = new Padding(0, S(2), S(8), 0) };
             var lblSitio = new Label { Text = UrlBase.Replace("https://", "").Replace("http://", ""), AutoSize = true, UseMnemonic = false, ForeColor = Gris, Margin = new Padding(0, S(6), S(2), 0) };
             var txtDireccion = new TextBox { Width = S(204), Margin = new Padding(0, S(2), 0, 0) };
+            var txtDescripcion = new TextBox { Multiline = true, AcceptsReturn = true, ScrollBars = ScrollBars.Vertical, Width = S(616), Height = S(62), Margin = new Padding(0, S(2), 0, 0) };
             var lblPres = new Label { AutoSize = true, UseMnemonic = false, MaximumSize = new Size(S(640), 0), Margin = new Padding(0, 0, 0, S(6)) };
             var btnVideo = Boton("Cargar video…", false);
             var btnPdf = Boton("Cargar PDF…", false);
@@ -186,6 +190,7 @@ namespace FlujoAR
                 }
                 txtNombre.Text = t.Nombre;
                 txtDireccion.Text = t.Direccion;
+                txtDescripcion.Text = t.Descripcion.Replace("\n", "\r\n");
                 numSeg.Value = Math.Max(numSeg.Minimum, Math.Min(numSeg.Maximum, t.PresSegundos));
                 lblEstado.Text = "";
                 cargando = false;
@@ -262,14 +267,14 @@ namespace FlujoAR
                 Cursor = Cursors.WaitCursor;
                 string error;
                 bool ok;
-                try { ok = GuardarTarjeta(actual, tarjetas, c.Clave, m.Id, nombre, direccion, (int)numSeg.Value, out error); }
+                try { ok = GuardarTarjeta(actual, tarjetas, c.Clave, m.Id, nombre, direccion, txtDescripcion.Text, (int)numSeg.Value, out error); }
                 finally { Cursor = Cursors.Default; }
 
                 foreach (var mo in mosaicos) mo.Invalidate();
                 mostrarPres();
                 lblEstado.ForeColor = ok ? Verde : Rojo;
                 lblEstado.Text = ok
-                    ? "Tarjeta " + actual.Numero + " guardada · " + DateTime.Now.ToString("HH:mm:ss") + ". Para que el QR impreso la muestre, publica (paso 6: Commit to main y Push origin)."
+                    ? "Tarjeta " + actual.Numero + " guardada · " + DateTime.Now.ToString("HH:mm:ss") + ". Para que el QR impreso la muestre, publica (paso 8: Commit to main y Push origin)."
                     : error;
                 return ok;
             };
@@ -293,7 +298,8 @@ namespace FlujoAR
             col.Controls.Add(lblTarjeta);
             col.Controls.Add(Fila(bloque("Campaña", cmbCampana), bloque("Pieza que abre", cmbPieza)));
             col.Controls.Add(Fila(bloque("Nombre que ve el cliente", txtNombre), bloque("Dirección en la barra del navegador", filaDireccion)));
-            var etiquetaPres = Etiqueta("Presentación (se reproduce sola al reconocer la tarjeta; después aparece la pieza)");
+            col.Controls.Add(Fila(bloque("Descripción y medidas (panel azul junto a la pieza: 3 o 4 renglones cortos)", txtDescripcion)));
+            var etiquetaPres = Etiqueta("Presentación (video o PDF que se reproduce solo al reconocer la tarjeta)");
             etiquetaPres.Margin = new Padding(0, 0, 0, S(2));
             col.Controls.Add(etiquetaPres);
             col.Controls.Add(lblPres);
@@ -302,6 +308,30 @@ namespace FlujoAR
             col.Controls.Add(lblEstado);
 
             mostrar(tarjetas.First(x => x.Numero == selTarjeta));
+
+            // Se llegó desde «Poner en tarjeta» (paso 6): la campaña ya viene elegida; solo falta decir en cuál tarjeta
+            if (campanaParaTarjeta != null)
+            {
+                int indice = campanas.FindIndex(c => c.Clave == campanaParaTarjeta);
+                string idPieza = piezaParaTarjeta;
+                campanaParaTarjeta = piezaParaTarjeta = null;
+                if (indice >= 0)
+                {
+                    string titulo = campanas[indice].Titulo;
+                    lblEstado.ForeColor = Naranja;
+                    lblEstado.Text = "Haz clic arriba en la tarjeta donde quieres poner «" + titulo + "».";
+                    ponerCampana = () =>
+                    {
+                        ponerCampana = null;
+                        if (cmbCampana.SelectedIndex == indice) cmbCampana.SelectedIndex = -1;
+                        cmbCampana.SelectedIndex = indice;          // llena las piezas y propone nombre y dirección
+                        int ip = idPieza == null ? -1 : campanas[indice].Modelos.FindIndex(m => m.Id == idPieza);
+                        if (ip > 0) cmbPieza.SelectedIndex = ip;
+                        lblEstado.ForeColor = Gris;
+                        lblEstado.Text = "«" + titulo + "» lista para la tarjeta " + actual.Numero + ". Carga su video o PDF si quieres y pulsa «Guardar tarjeta».";
+                    };
+                }
+            }
         }
 
         // La ventana gana alto solo en este paso (al salir, AjustarTamano la devuelve a su tamaño)
@@ -423,6 +453,7 @@ namespace FlujoAR
                     t.Pieza = Campo(def, "pieza");
                     t.Nombre = Campo(def, "nombre");
                     t.Direccion = Campo(def, "direccion");
+                    t.Descripcion = Campo(def, "descripcion").Replace("\r", "");
                     var pres = def.TryGetValue("presentacion", out valor) ? valor as Dictionary<string, object> : null;
                     if (pres != null)
                     {
@@ -451,6 +482,7 @@ namespace FlujoAR
                   .Append(", \"pieza\": ").Append(Colecciones.Json(t.Pieza))
                   .Append(", \"nombre\": ").Append(Colecciones.Json(t.Nombre))
                   .Append(", \"direccion\": ").Append(Colecciones.Json(t.Direccion));
+                if (t.Descripcion != "") sb.Append(",\n         \"descripcion\": ").Append(Colecciones.Json(t.Descripcion));
                 if (t.PresTipo == "video")
                     sb.Append(",\n         \"presentacion\": { \"tipo\": \"video\", \"archivo\": ").Append(Colecciones.Json(t.PresArchivo))
                       .Append(", \"version\": ").Append(Colecciones.Json(t.PresVersion)).Append(", \"origen\": ").Append(Colecciones.Json(t.PresOrigen)).Append(" }");
@@ -466,17 +498,18 @@ namespace FlujoAR
         // Guarda la tarjeta en dos tiempos, para que un error nunca deje tarjetas.json apuntando a archivos que no están:
         //   1) la asignación (campaña, pieza, nombre, dirección) → se valida con generar-tarjetas.js; si falla, se deshace;
         //   2) la presentación nueva (copiar el video o convertir el PDF) → y se vuelve a validar.
-        bool GuardarTarjeta(TarjetaAr t, List<TarjetaAr> todas, string coleccion, string pieza, string nombre, string direccion, int segundos, out string error)
+        bool GuardarTarjeta(TarjetaAr t, List<TarjetaAr> todas, string coleccion, string pieza, string nombre, string direccion, string descripcion, int segundos, out string error)
         {
             string ruta = Path.Combine(raiz, "tarjetas.json");
             string anterior = File.Exists(ruta) ? File.ReadAllText(ruta, Encoding.UTF8) : null;
-            var copia = new[] { t.Coleccion, t.Pieza, t.Nombre, t.Direccion };
+            var copia = new[] { t.Coleccion, t.Pieza, t.Nombre, t.Direccion, t.Descripcion };
             int segAntes = t.PresSegundos;
 
             t.Coleccion = coleccion; t.Pieza = pieza; t.Nombre = nombre; t.Direccion = direccion; t.PresSegundos = segundos;
+            t.Descripcion = (descripcion ?? "").Replace("\r", "").Trim();
             if (!EscribirYValidarTarjetas(todas, out error))
             {
-                t.Coleccion = copia[0]; t.Pieza = copia[1]; t.Nombre = copia[2]; t.Direccion = copia[3]; t.PresSegundos = segAntes;
+                t.Coleccion = copia[0]; t.Pieza = copia[1]; t.Nombre = copia[2]; t.Direccion = copia[3]; t.Descripcion = copia[4]; t.PresSegundos = segAntes;
                 try
                 {
                     if (anterior != null) { File.WriteAllText(ruta, anterior, new UTF8Encoding(false)); string e2; ValidarTarjetas(out e2); }

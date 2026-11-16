@@ -36,7 +36,7 @@ for (const n of Object.keys(tarjetas).filter(k => /^\d+$/.test(k))) {
   const pres = t.presentacion;
   if (pres) {
     const archivos = pres.tipo === 'pdf' ? (pres.paginas || []) : pres.tipo === 'video' ? [pres.archivo] : [];
-    if (!archivos.length || archivos.some(a => !a)) error('la presentación está incompleta: vuelve a cargarla en el paso 8 de Flujo AR');
+    if (!archivos.length || archivos.some(a => !a)) error('la presentación está incompleta: vuelve a cargarla en el paso «Tarjetas AR» de Flujo AR');
     for (const a of archivos.filter(Boolean)) if (!fs.existsSync(path.join(RAIZ, a))) error(`falta el archivo de la presentación: ${a}`);
   }
   if (!t.direccion) { console.log('  (sin dirección propia: se verá /pruebas/tarjeta/)'); continue; }

@@ -1,6 +1,6 @@
 ﻿<#
   Convierte cada página de un PDF en una imagen JPG (pagina-01.jpg, pagina-02.jpg…).
-  Lo usa el paso 8 de Flujo AR (Tarjetas AR) para que la presentación en PDF se vea en el celular
+  Lo usa el paso «Tarjetas AR» de Flujo AR para que la presentación en PDF se vea en el celular
   como una secuencia de imágenes, sin cargar un lector de PDF en la página.
 
   Usa el lector de PDF que trae Windows (Windows.Data.Pdf): no hay que instalar nada.
