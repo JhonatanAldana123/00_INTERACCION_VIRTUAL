@@ -159,6 +159,8 @@
     <small id="fluidez">Fluidez: midiendo…</small>
   </div>
 
+  <div id="medidor" style="position:fixed;left:6px;right:6px;bottom:2px;z-index:9;font:9px/1.2 system-ui,sans-serif;color:#fff;opacity:.75;text-shadow:0 0 3px #000;pointer-events:none;text-align:center"></div>
+
   <div class="abajo" id="abajo" hidden>
     <span class="mensaje" id="mensaje"></span>
     <div class="fila">
@@ -182,7 +184,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116e';
+    const VERSION = '20261116f';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -445,10 +447,15 @@
     // MindAR pide la cámara sin tamaño y el navegador entrega 640 × 480. A la distancia normal de uso (hay que
     // alejarse para que quepan el video y los paneles) la tarjeta ocupa ahí unos 70 píxeles de ancho: el texto
     // no se distingue y el motor la pierde durante segundos aunque esté a la vista (se vio en el video de prueba
-    // del 16/11/2026). Con 1080 la tarjeta mide más del doble en píxeles. Si el celular no da abasto (menos de
-    // 8 ciclos por segundo) se baja sola a 720 y luego a 480. ?camara=720 la fija.
+    // del 16/11/2026). Con 720 mide vez y media más, con 1080 más del doble, pero a más resolución el motor da
+    // menos lecturas por segundo y el contenido sigue más tarde a la tarjeta.
+    // Se empieza en 720. La resolución NO se cambia a mitad de sesión (reiniciar la cámara es un pantallazo negro,
+    // que fue lo que pasó con la bajada automática del 16/11): se mide la fluidez y se recuerda en este celular
+    // qué resolución usar la próxima vez. ?camara=1080 / 720 / 480 la fija.
+    const recordado = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+    const recordar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* sin almacenamiento: no pasa nada */ } };
     const camaraFija = params_('camara') !== null;
-    let calidadCamara = parseFloat(params_('camara')) || 1080, camaraInfo = '';
+    let calidadCamara = parseFloat(params_('camara')) || parseFloat(recordado('tarjeta-camara')) || 720, camaraInfo = '';
     const pedirCamara = navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
     if (pedirCamara) navigator.mediaDevices.getUserMedia = c => {
       if (!c || !c.video || typeof c.video !== 'object' || calidadCamara <= 480) return pedirCamara(c);
@@ -608,6 +615,11 @@
     const vTmp = new THREE.Vector3(), wTmp = new THREE.Vector3(), qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion();
     // Velocidad con que la tarjeta se desplaza en la imagen (sin la profundidad, que es ruidosa) y posición de salida
     const vLat = new THREE.Vector3(), pSal = new THREE.Vector3();
+    // pRef = última lectura tal cual (para medir la velocidad). pMed, además, se va adelantando entre lecturas.
+    const pRef = new THREE.Vector3();
+    // vLat cambia de golpe con cada lectura; vSal la sigue suave, cuadro a cuadro, y es la que mueve el contenido
+    const vSal = new THREE.Vector3(), qLlegada = new THREE.Quaternion();
+    let intervalo = 40;           // ms entre lecturas de la cámara (promedio): en un celular lento pueden ser 80–100
     const rampa = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     // Giro pequeño (cuaternión) → vector eje × ángulo en radianes, y al revés
     function aVector(q, v) {
@@ -701,19 +713,28 @@
 
     let hayPose = false, tSalto = 0, tCuadro = 0, tMed = 0, tGiro = 0;
     // Medidor de fluidez (se ve en «Calibrar»): cuadros dibujados y lecturas de la tarjeta por segundo
-    const medidor = { cuadros: 0, lecturas: 0, ciclos: 0, lentos: 0 };
+    const medidor = { cuadros: 0, lecturas: 0, ciclos: 0, muestras: [], decidido: false };
     setInterval(() => {
-      // La cámara entrega 30 imágenes por segundo: ese es el techo del motor. Si con 1080 no llega a 20 ciclos por
-      // segundo (o a 12 con 720) durante 4 s, se baja un escalón: más vale seguir fluido que ver más detalle.
+      // La cámara entrega 30 imágenes por segundo: ese es el techo del motor. Con 8 segundos de seguimiento medidos
+      // se decide la resolución de la PRÓXIMA visita en este celular (esta sesión no se toca):
+      //   muy lento (< 12 lecturas/s) → un escalón menos · sobrado en 720 (≥ 26) → probar 1080 la próxima vez,
+      //   salvo que 1080 ya haya resultado lento antes.
       const conCamara = mindar && !modoDemo && !reiniciando && estado !== 'inicio' && estado !== 'ar' && camaraInfo;
-      medidor.lentos = conCamara && !document.hidden && medidor.ciclos < (calidadCamara >= 1080 ? 20 : 12) ? medidor.lentos + 1 : 0;
-      if (medidor.lentos >= 4 && !camaraFija && calidadCamara > 480) {
-        calidadCamara = calidadCamara >= 1080 ? 720 : 480; medidor.lentos = 0;
-        reiniciarCamara();
+      if (conCamara && visible && !document.hidden && !medidor.decidido && !camaraFija) {
+        medidor.muestras.push(medidor.lecturas);
+        if (medidor.muestras.length >= 8) {
+          const media = medidor.muestras.reduce((a, b) => a + b, 0) / medidor.muestras.length;
+          medidor.decidido = true;
+          if (calidadCamara >= 1080 && media < 20) { recordar('tarjeta-camara', '720'); recordar('tarjeta-camara-tope', '720'); }
+          else if (calidadCamara === 720 && media < 12) recordar('tarjeta-camara', '480');
+          else if (calidadCamara === 720 && media >= 26 && recordado('tarjeta-camara-tope') !== '720') recordar('tarjeta-camara', '1080');
+        }
       }
-      const g = !giroscopio.hist.length ? 'sin giroscopio' : !giroscopio.elegida ? 'giroscopio aprendiendo (mueve un poco el celular)'
-        : 'giroscopio activo' + (giroscopio.comprobada ? ' y comprobado' : '');
-      if (!$('panel').hidden) $('fluidez').textContent = `Fluidez: ${medidor.cuadros} cuadros/s · ${medidor.ciclos} ciclos del motor/s · ${medidor.lecturas} lecturas de la tarjeta/s · ${camaraInfo} · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'} · ${g}`;
+      const g = !giroscopio.hist.length ? 'sin giroscopio' : !giroscopio.elegida ? 'giroscopio aprendiendo' : 'giroscopio activo' + (giroscopio.comprobada ? ' y comprobado' : '');
+      const texto = `${medidor.cuadros} cuadros/s · ${medidor.ciclos} ciclos/s · ${medidor.lecturas} lecturas/s · ${camaraInfo} · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'} · ${g} · v${VERSION.slice(-3)}`;
+      if (!$('panel').hidden) $('fluidez').textContent = 'Fluidez: ' + texto;
+      // En esta página de prueba el medidor queda siempre a la vista, chiquito, para que salga en los videos y capturas
+      $('medidor').textContent = modoDemo ? '' : texto;
       medidor.cuadros = medidor.lecturas = medidor.ciclos = 0;
     }, 1000);
     function cuadro() {
@@ -735,13 +756,14 @@
             // pieza seguía a la vista (estado «pieza»), viaja suave hasta la tarjeta en vez de saltar.
             if (!hayPose || !soporte.visible) { pSuave.copy(pNueva); qSuave.copy(qNueva); }
             pMed.copy(pNueva); qMed.copy(qNueva); pCruda.copy(pNueva); qCruda.copy(qNueva);
-            tMed = tGiro = ahora; hayPose = true; tSalto = 0; vLat.set(0, 0, 0);
-            pSal.copy(pSuave);
+            tMed = tGiro = ahora; hayPose = true; tSalto = 0; vLat.set(0, 0, 0); vSal.set(0, 0, 0);
+            pSal.copy(pSuave); pRef.copy(pNueva);
           } else {
             if (conGiro) {
               // Lo que giró el celular desde el cuadro anterior se le aplica, al revés, a la tarjeta (y a la última lectura)
               aGiro(aCamara(giroEntre(tGiro - cal.retraso, ahora - cal.retraso, wTmp), conGiro).negate(), qTmp2);
               qSuave.premultiply(qTmp2); pSuave.applyQuaternion(qTmp2); qMed.premultiply(qTmp2); pMed.applyQuaternion(qTmp2);
+              pRef.applyQuaternion(qTmp2); vLat.applyQuaternion(qTmp2); vSal.applyQuaternion(qTmp2);
             }
             tGiro = ahora;
             const dist = pNueva.length() || 1;
@@ -751,18 +773,32 @@
             if ((!esSalto || ahora - tSalto > 250) && (!pNueva.equals(pCruda) || !qNueva.equals(qCruda))) {
               // Llegó una lectura nueva de la cámara
               if (!esSalto) aprender(aVector(qTmp2.copy(qCruda).invert().premultiply(qNueva), vTmp.set(0, 0, 0)).clone(), tMed, ahora);
+              pCruda.copy(pNueva); qCruda.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva);
+              // La lectura llega «vieja»: muestra dónde estaba la tarjeta un ciclo del motor atrás. Lo que el celular
+              // giró en ese rato lo sabe el giroscopio, y se le aplica para traerla al presente.
+              if (conGiro) {
+                aGiro(aCamara(giroEntre(ahora - cal.retraso - Math.min(150, intervalo), ahora - cal.retraso, wTmp), conGiro).negate(), qLlegada);
+                pMed.applyQuaternion(qLlegada); qMed.premultiply(qLlegada);
+              }
               // Velocidad de desplazamiento de la tarjeta: lo que se movió desde la lectura anterior (ya descontado
               // el giro del celular), sin la parte de profundidad, promediado ~0,1 s
               if (esSalto) vLat.set(0, 0, 0);
               else {
                 const dtm = Math.min(0.2, Math.max(0.008, (ahora - tMed) / 1000));
-                vTmp.copy(pNueva).sub(pMed).divideScalar(dtm);
-                wTmp.copy(pNueva).normalize();
+                intervalo += (dtm * 1000 - intervalo) * 0.1;
+                vTmp.copy(pMed).sub(pRef).divideScalar(dtm);
+                wTmp.copy(pMed).normalize();
                 vLat.lerp(vTmp.addScaledVector(wTmp, -vTmp.dot(wTmp)), 1 - Math.exp(-dtm / 0.1));
               }
-              pCruda.copy(pNueva); qCruda.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva); tMed = ahora;
+              pRef.copy(pMed); tMed = ahora;
               medidor.lecturas++;
-            } else if (ahora - tMed > 200) vLat.multiplyScalar(Math.exp(-dt / 80));      // sin lecturas: la velocidad vieja ya no vale
+            } else if (ahora - tMed > 250) vLat.multiplyScalar(Math.exp(-dt / 80));      // sin lecturas: la velocidad vieja ya no vale
+            vSal.lerp(vLat, 1 - Math.exp(-dt / 60));
+            const rapidez = vSal.length() / dist, claro = rampa(rapidez, 0.04, 0.14);   // ¿se está desplazando de verdad?
+            // Entre una lectura y la siguiente la tarjeta sigue moviéndose: la última lectura se va adelantando con
+            // la velocidad medida. Así el contenido avanza en cada cuadro de pantalla (60 por segundo) aunque la
+            // cámara solo entregue 10–30 lecturas, en vez de avanzar a tirones.
+            if (ahora - tMed < 250) pMed.addScaledVector(vSal, dt / 1000 * claro);
             const grados = THREE.MathUtils.radToDeg(qSuave.angleTo(qMed));
             const tramo = pSuave.distanceTo(pMed) / dist;
             const tauP = cal.pos / (1 + tramo * 30);
@@ -771,12 +807,12 @@
             // (la tarjeta se giró de verdad). Sin giroscopio se persigue a la lectura con un retraso corto.
             if (conGiro) qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro * 2.5 / (1 + (grados / 5) ** 2))));
             else qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro / (1 + grados / 4))));
-            // Adelanto del desplazamiento: lo que el suavizado y el proceso de la cámara atrasan (~40 ms) se compensa
-            // con la velocidad medida. Solo en la posición en la imagen, que la cámara mide bien (adelantar el giro
-            // con lecturas de cámara fue lo que produjo saltos el 14/11); solo con movimiento claro, y con tope.
-            const rapidez = vLat.length() / dist;
-            const adelanto = Math.min((tauP + 40) / 1000 * rampa(rapidez, 0.04, 0.14), rapidez ? 0.08 / rapidez : 0);
-            pSal.copy(pSuave).addScaledVector(vLat, adelanto);
+            // Adelanto del desplazamiento: lo que atrasan el suavizado y el proceso de cada lectura (más o menos lo que
+            // dura un ciclo del motor: por eso en un celular lento el contenido seguía tarde) se compensa con la
+            // velocidad medida. Solo en la posición en la imagen, que la cámara mide bien (adelantar el giro con
+            // lecturas de cámara fue lo que produjo saltos el 14/11); solo con movimiento claro, y con tope.
+            const adelanto = Math.min((tauP + Math.min(150, intervalo)) / 1000 * claro, rapidez ? 0.1 / rapidez : 0);
+            pSal.copy(pSuave).addScaledVector(vSal, adelanto);
           }
           soporte.matrix.compose(pSal, qSuave, sNueva);
           soporte.matrixWorldNeedsUpdate = true;
