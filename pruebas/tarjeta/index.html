@@ -182,7 +182,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116c';
+    const VERSION = '20261116d';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -415,10 +415,10 @@
       clearTimeout(relojPerdida);
       relojPerdida = setTimeout(() => {
         if (visible) return;
-        if (estado === 'video' && !videoArranco) pista('Apunta a la tarjeta para seguir');
-        else if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta para verlo junto a ella'); }
+        if (estado === 'video' && !videoArranco) pista('Apunta a la tarjeta y acércala un poco');
+        else if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta y acércala un poco para verlo junto a ella'); }
         else if (estado === 'pieza') pista('La pieza se queda aquí: gírala con el dedo o vuelve a apuntar a la tarjeta');
-      }, 700);
+      }, aguante());
     }
 
     // A tamaño real en el piso: se suelta la cámara y se abre el AR del celular (necesita este toque)
@@ -439,6 +439,65 @@
     async function volver() {
       $('volver').hidden = true;
       try { await iniciarCamara(); } catch (e) { location.reload(); }
+    }
+
+    // ── Cámara en alta resolución ───────────────────────────────────────────────────────────────
+    // MindAR pide la cámara sin tamaño y el navegador entrega 640 × 480. A la distancia normal de uso (hay que
+    // alejarse para que quepan el video y los paneles) la tarjeta ocupa ahí unos 70 píxeles de ancho: el texto
+    // no se distingue y el motor la pierde durante segundos aunque esté a la vista (se vio en el video de prueba
+    // del 16/11/2026). Con 1080 la tarjeta mide más del doble en píxeles. Si el celular no da abasto (menos de
+    // 8 ciclos por segundo) se baja sola a 720 y luego a 480. ?camara=720 la fija.
+    const camaraFija = params_('camara') !== null;
+    let calidadCamara = parseFloat(params_('camara')) || 1080, camaraInfo = '';
+    const pedirCamara = navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
+    if (pedirCamara) navigator.mediaDevices.getUserMedia = c => {
+      if (!c || !c.video || typeof c.video !== 'object' || calidadCamara <= 480) return pedirCamara(c);
+      const lado = calidadCamara >= 1080 ? [1920, 1080] : [1280, 720];
+      return pedirCamara({ ...c, video: { ...c.video, width: { ideal: lado[0] }, height: { ideal: lado[1] } } }).catch(() => pedirCamara(c));
+    };
+
+    // Dónde busca MindAR la tarjeta. De fábrica revisa, por turnos, 9 recuadros alrededor del centro de la imagen
+    // (con la cámara grande dejaría fuera las orillas). Aquí se cambia por: un turno donde se vio la tarjeta por
+    // última vez (casi siempre sigue por ahí) y un turno recorriendo toda la imagen, del centro hacia afuera.
+    const ultimaPos = { x: 0.5, y: 0.5, t: 0 };       // centro de la tarjeta en la imagen (0–1) y cuándo se vio
+    function mejorarBusqueda() {
+      const ctl = mindar && mindar.controller, cd = ctl && ctl.cropDetector;
+      if (!cd || !cd._detect || !cd.cropSize) return;
+      const W = cd.width, H = cd.height, C = cd.cropSize;
+      camaraInfo = `cámara ${W}×${H}`;
+      const pasos = L => { const n = L - C < 8 ? 1 : Math.ceil((L - C) / (C * 0.75)) + 1; return Array.from({ length: n }, (_, i) => n === 1 ? 0 : Math.round(i * (L - C - 1) / (n - 1))); };
+      const rejilla = [];
+      for (const y of pasos(H)) for (const x of pasos(W)) rejilla.push([x, y]);
+      rejilla.sort((a, b) => Math.hypot(a[0] + C / 2 - W / 2, a[1] + C / 2 - H / 2) - Math.hypot(b[0] + C / 2 - W / 2, b[1] + C / 2 - H / 2));
+      const tope = (v, max) => Math.min(max, Math.max(0, Math.round(v)));
+      let turno = 0, i = 0;
+      cd.detectMoving = function (imagen) {
+        if (turno++ % 2 === 0 && performance.now() - ultimaPos.t < 15000)
+          return this._detect(imagen, tope(ultimaPos.x * W - C / 2, W - C - 1), tope(ultimaPos.y * H - C / 2, H - C - 1));
+        const [x, y] = rejilla[i++ % rejilla.length];
+        return this._detect(imagen, x, y);
+      };
+      // Cuenta los ciclos de trabajo del motor (buscando o siguiendo) para el medidor y para bajar la cámara si hace falta
+      if (ctl.inputLoader && ctl.inputLoader.loadInput) {
+        const cargar = ctl.inputLoader.loadInput.bind(ctl.inputLoader);
+        ctl.inputLoader.loadInput = v => { medidor.ciclos++; return cargar(v); };
+      }
+    }
+    let reiniciando = false;
+    async function reiniciarCamara() {
+      if (!mindar || modoDemo || reiniciando) return;
+      reiniciando = true;
+      try {
+        renderer.setAnimationLoop(null);
+        mindar.stop();
+        await new Promise(ok => setTimeout(ok, 350));
+        await mindar.start();
+        mejorarBusqueda();
+        hayPose = false; visible = false;
+        reiniciarGiroscopio();
+        renderer.setAnimationLoop(cuadro);
+      } catch (e) { console.error(e); location.reload(); }
+      reiniciando = false;
     }
 
     // ── Con cámara: MindAR sigue la tarjeta ─────────────────────────────────────────────────────
@@ -472,6 +531,7 @@
         ancla.onTargetLost = alPerder;
       }
       await mindar.start();
+      mejorarBusqueda();
       estado = 'buscando';
       visible = false;
       $('guiaTexto').textContent = 'Ubica la tarjeta en el recuadro';
@@ -529,6 +589,10 @@
     const soporte = new THREE.Group();
     let anclaGrupo = null, tUltimaVista = 0;
     const AGUANTE_MS = 700;       // cuánto se queda el contenido en su sitio si la tarjeta se pierde un momento
+    // Con giroscopio se puede sostener más: mientras la cámara reencuentra la tarjeta, el contenido se mantiene
+    // quieto en el espacio compensando el movimiento del celular
+    function aguante() { return giroscopioListo(performance.now()) ? 2500 : AGUANTE_MS; }
+    let distTipica = 0;           // distancia habitual a la tarjeta (para acomodar la pieza cuando se pierde)
     // Calibración (se ajusta en vivo con el botón «Calibrar»; también ?pos=120&giro=220&salto=25)
     const numero = (n, defecto) => { const v = parseFloat(params_(n)); return isNaN(v) ? defecto : v; };
     const cal = {
@@ -634,12 +698,19 @@
 
     let hayPose = false, tSalto = 0, tCuadro = 0, tMed = 0, tGiro = 0;
     // Medidor de fluidez (se ve en «Calibrar»): cuadros dibujados y lecturas de la tarjeta por segundo
-    const medidor = { cuadros: 0, lecturas: 0 };
+    const medidor = { cuadros: 0, lecturas: 0, ciclos: 0, lentos: 0 };
     setInterval(() => {
+      // Si con la cámara grande el motor trabaja a menos de 8 ciclos por segundo durante 4 s, se baja un escalón
+      const conCamara = mindar && !modoDemo && !reiniciando && estado !== 'inicio' && estado !== 'ar' && camaraInfo;
+      medidor.lentos = conCamara && !document.hidden && medidor.ciclos < 8 ? medidor.lentos + 1 : 0;
+      if (medidor.lentos >= 4 && !camaraFija && calidadCamara > 480) {
+        calidadCamara = calidadCamara >= 1080 ? 720 : 480; medidor.lentos = 0;
+        reiniciarCamara();
+      }
       const g = !giroscopio.hist.length ? 'sin giroscopio' : !giroscopio.elegida ? 'giroscopio aprendiendo (mueve un poco el celular)'
         : 'giroscopio activo' + (giroscopio.comprobada ? ' y comprobado' : '');
-      if (!$('panel').hidden) $('fluidez').textContent = `Fluidez: ${medidor.cuadros} cuadros/s · ${medidor.lecturas} lecturas de la tarjeta/s · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'} · ${g}`;
-      medidor.cuadros = medidor.lecturas = 0;
+      if (!$('panel').hidden) $('fluidez').textContent = `Fluidez: ${medidor.cuadros} cuadros/s · ${medidor.ciclos} ciclos del motor/s · ${medidor.lecturas} lecturas de la tarjeta/s · ${camaraInfo} · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'} · ${g}`;
+      medidor.cuadros = medidor.lecturas = medidor.ciclos = 0;
     }, 1000);
     function cuadro() {
       const ahora = performance.now();
@@ -655,8 +726,11 @@
           // cal.salto grados, se espera un cuarto de segundo antes de creerle (suele ser un error de un instante).
           anclaGrupo.matrix.decompose(pNueva, qNueva, sNueva);
           const conGiro = giroscopioListo(ahora) ? giroscopio.elegida : null;
-          if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) {
-            pSuave.copy(pNueva); qSuave.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva); pCruda.copy(pNueva); qCruda.copy(qNueva);
+          if (!hayPose || ahora - tUltimaVista > aguante()) {
+            // Tarjeta recién encontrada. Si el contenido ya no estaba en pantalla, aparece directo en su sitio; si la
+            // pieza seguía a la vista (estado «pieza»), viaja suave hasta la tarjeta en vez de saltar.
+            if (!hayPose || !soporte.visible) { pSuave.copy(pNueva); qSuave.copy(qNueva); }
+            pMed.copy(pNueva); qMed.copy(qNueva); pCruda.copy(pNueva); qCruda.copy(qNueva);
             tMed = tGiro = ahora; hayPose = true; tSalto = 0;
           } else {
             if (conGiro) {
@@ -690,9 +764,30 @@
           soporte.matrixWorldNeedsUpdate = true;
           soporte.visible = true;
           tUltimaVista = ahora;
-        } else if (ahora - tUltimaVista > AGUANTE_MS && estado !== 'pieza') soporte.visible = false;
-        // Con la pieza en pantalla no se oculta nada al perder la tarjeta: se queda donde estaba (se puede seguir
-        // girando con el dedo) y vuelve a pegarse a la tarjeta cuando la cámara la encuentra otra vez.
+          // Dónde quedó la tarjeta en la imagen (para buscarla ahí primero si se pierde) y a qué distancia suele estar
+          vTmp.copy(pSuave).applyMatrix4(camera.projectionMatrix);
+          if (isFinite(vTmp.x) && isFinite(vTmp.y)) { ultimaPos.x = (vTmp.x + 1) / 2; ultimaPos.y = (1 - vTmp.y) / 2; ultimaPos.t = ahora; }
+          distTipica += (pSuave.length() - distTipica) * (distTipica ? 0.02 : 1);
+        } else if (hayPose && soporte.visible) {
+          const perdida = ahora - tUltimaVista;
+          if (perdida <= aguante()) {
+            // Perdida hace poco: el contenido se queda quieto en el espacio (el giroscopio compensa el celular)
+            const conGiro = giroscopioListo(ahora) ? giroscopio.elegida : null;
+            if (conGiro) {
+              aGiro(aCamara(giroEntre(tGiro - cal.retraso, ahora - cal.retraso, wTmp), conGiro).negate(), qTmp2);
+              qSuave.premultiply(qTmp2); pSuave.applyQuaternion(qTmp2);
+            }
+            tGiro = ahora;
+          } else if (estado === 'pieza') {
+            // Con la pieza no se oculta nada: se acomoda al centro, derecha y de frente, para seguir girándola con
+            // el dedo; vuelve a la tarjeta cuando la cámara la encuentra. (Antes se quedaba congelada en la última
+            // lectura, que al perderse suele ser mala: se veía gigante y torcida.)
+            const k = 1 - Math.exp(-dt / 300);
+            pSuave.lerp(vTmp.set(0, 0, -(distTipica || pSuave.length())), k);
+            qSuave.slerp(qTmp.identity(), k);
+          } else soporte.visible = false;
+          if (soporte.visible) { soporte.matrix.compose(pSuave, qSuave, sNueva); soporte.matrixWorldNeedsUpdate = true; }
+        }
       }
       medidor.cuadros++;
       const k = suave((ahora - tAparicion) / 600);
@@ -792,15 +887,7 @@
       acostado = ahora;
       if (!mindar || modoDemo || girando || estado === 'inicio' || estado === 'ar') return;
       girando = true;
-      try {
-        renderer.setAnimationLoop(null);
-        mindar.stop();
-        await new Promise(ok => setTimeout(ok, 350));      // el navegador termina de girar
-        await mindar.start();
-        hayPose = false; visible = false;
-        reiniciarGiroscopio();
-        renderer.setAnimationLoop(cuadro);
-      } catch (e) { console.error(e); location.reload(); }
+      await reiniciarCamara();
       girando = false;
     });
 
@@ -825,7 +912,7 @@
     // Para revisar desde el computador
     window.__tarjeta = { get estado() { return estado; }, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv, alPerder, alEncontrar,
       // Para simular el seguimiento sin cámara: un «ancla» falsa y eventos de giroscopio inventados
-      prueba: { THREE, soporte, giroscopio, alMover, cuadro, ponerAncla(g) { anclaGrupo = g; modoDemo = false; soporte.matrixAutoUpdate = false; }, reiniciar() { hayPose = false; giroscopio.hist.length = 0; giroscopio.q.identity(); giroscopio.t = 0; reiniciarGiroscopio(); } } };
+      prueba: { THREE, soporte, giroscopio, alMover, cuadro, ultimaPos, mejorarBusqueda, ponerMotor(m) { mindar = m; }, ponerEstado(e) { estado = e; }, ponerAncla(g) { anclaGrupo = g; modoDemo = false; soporte.matrixAutoUpdate = false; }, reiniciar() { hayPose = false; giroscopio.hist.length = 0; giroscopio.q.identity(); giroscopio.t = 0; reiniciarGiroscopio(); } } };
   </script>
 </body>
 </html>
