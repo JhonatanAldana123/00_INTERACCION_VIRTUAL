@@ -306,7 +306,7 @@
   <model-viewer
     id="viewer"
     ar
-    ar-modes="scene-viewer webxr quick-look"
+    ar-modes="webxr scene-viewer quick-look"
     ar-usdz-max-texture-size="1024"
     camera-controls
     autoplay
@@ -586,15 +586,18 @@
     }
 
     // ── Cuando el AR no abre ────────────────────────────────
-    // En Android el botón abre la app de AR de Google (Scene Viewer, parte de «Servicios de Google Play para RA»).
-    // Si esa app no responde, el celular vuelve a esta página sin decir nada (16/11/2026: pasó con la isla de AXE
-    // y parecía un fallo de la pieza). Ahora se avisa qué pasó y el siguiente toque usa el AR del propio
-    // navegador (WebXR), que no depende de esa app.
+    // Android tiene dos formas de AR: el del navegador (WebXR) y la app de Google (Scene Viewer). Desde mediados
+    // de octubre de 2026 Scene Viewer se cierra sola al abrirse, con cualquier pieza y en cualquier sitio (error
+    // de la app de Google, github.com/google-ar/arcore-android-sdk/issues/1795): el celular «trata de entrar» y
+    // vuelve a esta página sin decir nada. El 16/11/2026 parecía un fallo de la isla de AXE y no lo era.
+    // Por eso ar-modes pone primero WebXR; Scene Viewer queda de respaldo. Si algún día Google lo corrige y se
+    // prefiere Scene Viewer otra vez, basta invertir el orden en el atributo ar-modes.
+    // Aquí se avisa cuando alguna de las dos falla, para que no vuelva a pasar en silencio.
     let sceneViewerFallo = false;
     addEventListener('hashchange', () => {
       if (location.hash !== '#model-viewer-no-ar-fallback') return;
       sceneViewerFallo = true;
-      avisar('La app de AR de Android no abrió. Toca otra vez «Ver en AR» para probar con el AR del navegador.', 9000);
+      avisar('La app de AR de Android no abrió (es una falla conocida de Google). Toca otra vez «Ver en AR».', 9000);
     });
     viewer.addEventListener('ar-status', e => {
       const estado = e.detail && e.detail.status;
