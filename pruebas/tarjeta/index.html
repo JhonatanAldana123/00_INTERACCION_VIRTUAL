@@ -215,8 +215,9 @@
   <!-- Panel de calibración (solo en esta página de prueba): se mueve mirando la tarjeta y se anotan los números -->
   <div class="panel" id="panel" hidden>
     <label>Inclinación que copia de la tarjeta <b id="vIncl"></b><input type="range" id="rIncl" min="0" max="100" step="5"></label>
-    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cEncuadre" style="width:auto"> Mantener todo dentro de la pantalla</label>
-    <small>Inclinación: 0 = la presentación siempre de frente (más fácil de leer); 100 = se inclina igual que la tarjeta.</small>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cEncuadre" style="width:auto"> Que no crezca más que la pantalla</label>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cCentrar" style="width:auto"> Correrla para que quede siempre entera</label>
+    <small>Inclinación: 100 = se inclina igual que la tarjeta; 0 = siempre de frente a la pantalla.</small>
     <label>Firmeza de posición <b id="vPos"></b><input type="range" id="rPos" min="0" max="400" step="10"></label>
     <label>Firmeza de giro <b id="vGiro"></b><input type="range" id="rGiro" min="0" max="600" step="10"></label>
     <label>Ignorar giros bruscos de más de <b id="vSalto"></b><input type="range" id="rSalto" min="5" max="90" step="5"></label>
@@ -247,7 +248,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116k';
+    const VERSION = '20261116m';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -520,27 +521,90 @@
       cargador.setDRACOLoader(new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/'));
       cargador.setMeshoptDecoder(MeshoptDecoder);
       const gltf = await cargador.loadAsync(piezaInfo.glb);
-      pieza = gltf.scene;
-      const caja = new THREE.Box3().setFromObject(pieza);
-      const tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
-      pieza.position.set(-centro.x, -caja.min.y, -centro.z);      // apoyada en su base y centrada
-      giro.add(pieza);
-      grupoPieza.userData.tam = tam;
+      await hornearGiro(gltf.scene);
       colocarPieza();
       // (El AR a tamaño real lo hace <model-viewer>, que ya se cargó para la pantalla de inicio)
     }
 
-    // La pieza va dentro de la presentación, en su caja de la disposición (al lado o encima de la descripción):
-    // DE PIE, de frente a quien mira la tarjeta, apoyada en el borde de abajo de la caja, y girando sola.
-    // Se le da el tamaño con el que cabe en la caja en cualquier punto de la vuelta (por eso se mide su diagonal).
+    // LA PIEZA GIRANDO ES UNA SECUENCIA DE IMÁGENES, no el modelo 3D en vivo. Medido en el video de prueba del
+    // 16/11/2026 (Realme): sin la pieza en pantalla el celular daba 33–35 cuadros y 17–22 lecturas de la tarjeta por
+    // segundo; con la pieza 3D girando (390.000 triángulos, dibujada 30 veces por segundo junto a la cámara) caía a
+    // 11–21 cuadros y 3–9 lecturas: todo se veía a tirones y la presentación llegaba tarde a la tarjeta.
+    // Por eso, apenas carga, la pieza se dibuja UNA vez desde GIRO.cuadros ángulos en un lienzo (una vuelta completa)
+    // con un motor aparte que luego se suelta, junto con el modelo. Después solo se muestra una imagen plana que va
+    // pasando de cuadro en cuadro (fundiendo cada uno con el siguiente): no le cuesta nada al seguimiento.
+    const GIRO = { cuadros: 72, lado: 256, columnas: 9, filas: 8, angulo: 0 };
+    async function hornearGiro(modelo) {
+      const caja = new THREE.Box3().setFromObject(modelo);
+      const tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
+      modelo.position.sub(centro);
+      const eje = new THREE.Group(), escenaGiro = new THREE.Scene();
+      eje.add(modelo); escenaGiro.add(eje);
+      const motor = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      motor.setPixelRatio(1);
+      motor.setSize(GIRO.lado, GIRO.lado, false);
+      const luz = new THREE.PMREMGenerator(motor);
+      escenaGiro.environment = luz.fromScene(new RoomEnvironment(), 0.04).texture;
+      // Cámara un poco por encima, a la distancia en que la pieza cabe entera en cualquier punto de la vuelta
+      const radio = Math.hypot(tam.x, tam.y, tam.z) / 2, apertura = 26, altura = THREE.MathUtils.degToRad(11);
+      const dist = radio / Math.sin(THREE.MathUtils.degToRad(apertura / 2)) * 1.01;
+      const camaraGiro = new THREE.PerspectiveCamera(apertura, 1, dist - radio * 1.1, dist + radio * 1.1);
+      camaraGiro.position.set(0, dist * Math.sin(altura), dist * Math.cos(altura));
+      camaraGiro.lookAt(0, 0, 0);
+      const atlas = document.createElement('canvas');
+      atlas.width = GIRO.columnas * GIRO.lado; atlas.height = GIRO.filas * GIRO.lado;
+      const g = atlas.getContext('2d');
+      for (let i = 0; i < GIRO.cuadros; i++) {
+        eje.rotation.y = i / GIRO.cuadros * Math.PI * 2;
+        motor.render(escenaGiro, camaraGiro);
+        g.drawImage(motor.domElement, (i % GIRO.columnas) * GIRO.lado, Math.floor(i / GIRO.columnas) * GIRO.lado);
+        if (i % 4 === 3) await new Promise(ok => setTimeout(ok, 0));       // de a pocos, para no congelar la pantalla
+      }
+      // Se suelta todo lo pesado: el modelo, sus imágenes y el motor que lo dibujó
+      escenaGiro.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        for (const mat of [].concat(o.material || [])) {
+          for (const v of Object.values(mat)) if (v && v.isTexture) v.dispose();
+          mat.dispose();
+        }
+      });
+      escenaGiro.environment.dispose(); luz.dispose(); motor.dispose();
+      if (motor.forceContextLoss) motor.forceContextLoss();
+
+      // Dos planos con el mismo lienzo: uno muestra el cuadro actual y el otro, encima, va apareciendo con el siguiente
+      const base = new THREE.CanvasTexture(atlas);
+      base.colorSpace = THREE.SRGBColorSpace;
+      GIRO.capas = [0, 1].map(n => {
+        const tex = n ? base.clone() : base;
+        tex.repeat.set(1 / GIRO.columnas, 1 / GIRO.filas);
+        tex.needsUpdate = true;
+        const malla = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+          new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, transparent: true, depthWrite: false }));
+        malla.position.z = n * 0.002;
+        giro.add(malla);
+        return malla;
+      });
+      pieza = giro;
+      ponerCuadroGiro();
+    }
+    function ponerCuadroGiro() {
+      if (!GIRO.capas) return;
+      const vuelta = GIRO.angulo / (Math.PI * 2), f = (vuelta - Math.floor(vuelta)) * GIRO.cuadros, i = Math.floor(f) % GIRO.cuadros;
+      [i, (i + 1) % GIRO.cuadros].forEach((cuadro, n) => {
+        const tex = GIRO.capas[n].material.map;
+        tex.offset.set((cuadro % GIRO.columnas) / GIRO.columnas, 1 - (Math.floor(cuadro / GIRO.columnas) + 1) / GIRO.filas);
+      });
+      GIRO.capas[1].material.opacity = f - Math.floor(f);
+    }
+
+    // La pieza va dentro de la presentación, en su caja de la disposición (al lado o encima de la descripción)
     function colocarPieza() {
-      const d = disp.pieza, tam = grupoPieza.userData.tam || new THREE.Vector3(1, 1, 1);
-      const diagonal = Math.hypot(tam.x, tam.z);
-      const e = grupoPieza.userData.escala = Math.min(d.h / tam.y, d.w / diagonal) * 0.96;
+      const d = disp.pieza;
+      // La imagen deja aire alrededor de la pieza (cabe en cualquier punto de la vuelta): se agranda un poco
+      const lado = grupoPieza.userData.escala = Math.min(d.w, d.h) * 1.2;
       grupoPieza.rotation.set(0, 0, 0);
-      // Un poco hacia adelante, para que al girar no atraviese el plano de la tarjeta
-      grupoPieza.position.set(d.x + d.w / 2, d.y - d.h + (d.h - tam.y * e) / 2, diagonal * e / 2 + 0.02);
-      grupoPieza.scale.setScalar(e);
+      grupoPieza.position.set(d.x + d.w / 2, d.y - d.h / 2, 0.03);
+      grupoPieza.scale.setScalar(lado);
     }
 
     // ── Estados ─────────────────────────────────────────────────────────────────────────────────
@@ -880,8 +944,9 @@
       giro: numero('giro', 220) || 1,     // ms de suavizado del giro con la tarjeta quieta
       salto: numero('salto', 25),         // grados: giros bruscos mayores a esto se ignoran un instante
       retraso: numero('retraso', 60),     // ms que va la imagen de la cámara por detrás del giroscopio
-      inclinacion: numero('inclinacion', 10),            // % de la inclinación de la tarjeta que copia la presentación (0 = siempre de frente)
-      encuadre: params_('encuadre') !== '0',             // la presentación se achica y se corre para caber siempre en la pantalla
+      inclinacion: numero('inclinacion', 100),           // % de la inclinación de la tarjeta que copia la presentación (0 = siempre de frente)
+      encuadre: params_('encuadre') !== '0',             // tope de tamaño: al acercar la tarjeta, la presentación no pasa de llenar la pantalla
+      centrar: params_('centrar') === '1',               // además se corre para quedar siempre entera en pantalla (apagado: se sentía raro)
     };
 
     // ── Encuadre de la presentación ─────────────────────────────────────────────────────────────
@@ -895,7 +960,7 @@
     //   3. Lugar: si la tarjeta se va hacia un borde, el bloque (logo, video o PDF, descripción y pieza) se corre lo
     //      justo para seguir entero en pantalla. La línea de contacto sí se queda pegada a la tarjeta.
     const ENCUADRE_MIN = 0.42;
-    const enc = { k: 1, ux: 0, uy: 0, listo: false, p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
+    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
                   qv: new THREE.Quaternion(), v: new THREE.Vector3(), m: new THREE.Matrix4(), inv: new THREE.Matrix4() };
     function encuadrar(dt) {
       if (modoDemo || !soporte.visible || !anclaGrupo) {
@@ -915,7 +980,8 @@
       // 2 y 3. Dónde cae la tarjeta en la pantalla y cuántos píxeles mide su ancho
       let k = 1, ux = 0, uy = 0;
       if (cal.encuadre) {
-        const r = renderer.domElement.getBoundingClientRect(), W = innerWidth, H = innerHeight, acostada = W > H;
+        if (!enc.r || enc.n++ % 30 === 0) enc.r = renderer.domElement.getBoundingClientRect();      // no en cada cuadro: es lento
+        const r = enc.r, W = innerWidth, H = innerHeight, acostada = W > H;
         const sup = acostada ? 6 : 44, inf = acostada ? 8 : 58, m = disp.marco;
         enc.v.copy(enc.p).applyMatrix4(camera.projectionMatrix);
         const cx = r.left + (enc.v.x + 1) / 2 * r.width, cy = r.top + (1 - enc.v.y) / 2 * r.height;
@@ -927,12 +993,13 @@
           const s = porAncho * k, izq = cx + m.l * s, der = cx + m.r * s, arr = cy - m.t * s, aba = cy - m.b * s;
           let dx = der - izq > W ? (W - (izq + der)) / 2 : izq < 0 ? -izq : der > W ? W - der : 0;
           let dy = aba - arr > H - sup - inf ? (sup + H - inf - (arr + aba)) / 2 : arr < sup ? sup - arr : aba > H - inf ? H - inf - aba : 0;
-          ux = dx / porAncho; uy = -dy / porAncho;
+          if (cal.centrar) { ux = dx / porAncho; uy = -dy / porAncho; }
         }
       }
-      // Suave, para que el bloque no salte cuando la tarjeta cruza un borde (al aparecer, va directo a su sitio)
+      // El tamaño se aplica al instante (con retraso, el bloque «bombeaba» detrás de la tarjeta: prueba del 16/11).
+      // El corrimiento, si está encendido, sí va suave para no saltar cuando la tarjeta cruza un borde.
       const f = enc.listo ? 1 - Math.exp(-dt / 220) : 1;
-      enc.k += (k - enc.k) * f; enc.ux += (ux - enc.ux) * f; enc.uy += (uy - enc.uy) * f; enc.listo = true;
+      enc.k = k; enc.ux += (ux - enc.ux) * f; enc.uy += (uy - enc.uy) * f; enc.listo = true;
       bloque.scale.setScalar(enc.k);
       bloque.position.set(enc.ux, enc.uy, 0);
     }
@@ -1229,7 +1296,8 @@
         grupoPieza.visible = !!pieza && dp > 0;
         if (grupoPieza.visible) {
           grupoPieza.scale.setScalar(Math.max(0.001, dp) * grupoPieza.userData.escala);
-          if (xArrastre === null) giro.rotation.y += dt / 1000 * 0.7;
+          if (xArrastre === null) GIRO.angulo += dt / 1000 * 0.6;
+          ponerCuadroGiro();
           if (!botonReal && estado === 'video') { botonReal = true; $('verReal').hidden = !mv.canActivateAR; }
         }
       } else grupoPieza.visible = false;
@@ -1251,7 +1319,7 @@
       if (xArrastre === null || !grupoPieza.visible) return;
       if (!giroManual && Math.abs(e.clientX - toque0[0]) < 8) return;
       giroManual = true;
-      giro.rotation.y += (e.clientX - xArrastre) * 0.012;
+      GIRO.angulo += (e.clientX - xArrastre) * 0.012;
       xArrastre = e.clientX;
     });
     for (const fin of ['pointerup', 'pointercancel', 'pointerleave']) escena.addEventListener(fin, () => { xArrastre = null; });
@@ -1332,6 +1400,8 @@
     $('rIncl').oninput = () => { cal.inclinacion = parseFloat($('rIncl').value) || 0; $('vIncl').textContent = cal.inclinacion + ' %'; };
     $('cEncuadre').checked = cal.encuadre;
     $('cEncuadre').onchange = () => { cal.encuadre = $('cEncuadre').checked; };
+    $('cCentrar').checked = cal.centrar;
+    $('cCentrar').onchange = () => { cal.centrar = $('cCentrar').checked; };
     $('calibrar').onclick = () => { $('panel').hidden = !$('panel').hidden; };
 
     $('comenzar').onclick = () => comenzar(params.has('demo'));

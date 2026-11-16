@@ -4,9 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <!-- Barra del navegador del mismo negro del visor, para que se integre con la pantalla -->
-  <meta name="theme-color" content="#08090D">
+  <meta name="theme-color" content="#005C7E">
   <meta name="color-scheme" content="dark">
   <title>Interacción Virtual AR</title>
+
+  <!-- Tipografía de la tarjeta impresa -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;500;700&display=swap">
 
   <!-- model-viewer: maneja .glb (Android) y .usdz (iOS) con AR nativo -->
   <!-- Versión fija para que una actualización de la librería no rompa el visor -->
@@ -14,14 +19,14 @@
 
   <style>
     /* ─── TOKENS ─────────────────────────────────────── */
+    /* Mismo arte de la tarjeta impresa y de la pantalla de inicio de la Tarjeta AR (pruebas/tarjeta/):
+       azul plano, triángulos, flecha y tipografía Ubuntu. */
     :root {
-      --bg:       #08090D;
-      --fg:       #E8EBF4;
-      --fg-dim:   rgba(232,235,244,0.45);
-      --accent:   #00E5C8;
-      --accent-glow: rgba(0,229,200,0.25);
-      --overlay-top: linear-gradient(to bottom, rgba(8,9,13,0.75) 0%, transparent 100%);
-      --overlay-bot: linear-gradient(to top,   rgba(8,9,13,0.85) 0%, transparent 100%);
+      --bg:       #005C7E;
+      --fg:       #FFFFFF;
+      --fg-dim:   rgba(255,255,255,0.78);
+      --accent:   #93C01F;
+      --cian:     #0091B5;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,97 +38,89 @@
       overscroll-behavior: none;   /* sin "tirar para recargar" mientras se gira el modelo */
       background: var(--bg);
       color: var(--fg);
-      font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Ubuntu', -apple-system, 'Segoe UI', system-ui, sans-serif;
+      font-weight: 300;
       -webkit-font-smoothing: antialiased;
     }
 
+    /* ─── PÁGINA ──────────────────────────────────────── */
+    /* Pensada para celular vertical: los tamaños salen del ancho (vw) con tope por el alto (vh), para que
+       todo quepa sin desplazar. De arriba abajo: nombres, recuadro con la pieza, selector (si la campaña
+       tiene varias piezas), textos y botón de AR. */
+    .pagina {
+      position: fixed; inset: 0; overflow: hidden; background: var(--bg); text-align: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+      --tri: min(11vw, 7.5vh);          /* ancho de los triángulos; los nombres arrancan a su derecha, a su altura */
+      padding: max(env(safe-area-inset-top, 0px), calc(var(--tri) * 1.65)) 6vw max(env(safe-area-inset-bottom, 0px), 3.5vh);
+    }
+    .pagina > * { position: relative; z-index: 1; }
+    .pagina .triangulos { position: absolute; left: 0; top: 0; width: var(--tri); height: auto; z-index: 0; }
+    .pagina .flecha { position: absolute; left: 0; bottom: 0; width: 27vw; max-width: 19vh; height: auto; z-index: 0; pointer-events: none; }
+    .titulos {
+      display: flex; flex-direction: column; min-height: 2.3em;
+      align-self: stretch; text-align: left; margin-left: calc(var(--tri) - 2vw);
+      font-weight: 700; font-size: clamp(16px, 5.6vw, 3.4vh); line-height: 1.18; text-transform: uppercase;
+    }
+    .titulos .campana { color: var(--accent); }
+
     /* ─── VISOR 3D ────────────────────────────────────── */
+    .cuadro {
+      flex: none; width: min(82vw, 40vh); aspect-ratio: 436 / 500; border-radius: 9%; overflow: hidden; margin: 1.5vh 0;
+      background: radial-gradient(circle at 50% 42%, #fff 50%, #e9edf1); box-shadow: 0 8px 26px rgba(0,0,0,.2);
+    }
+    .pagina.varias .cuadro { width: min(82vw, 36vh); }      /* deja sitio al selector de piezas */
     model-viewer {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--bg);
+      display: block; width: 100%; height: 100%;
+      background: transparent;
+      --poster-color: transparent;
       --progress-bar-color: var(--accent);
-      --progress-bar-height: 2px;
+      --progress-bar-height: 3px;
     }
 
     /* Ocultar el botón AR nativo de model-viewer (usamos el nuestro) */
     model-viewer::part(default-ar-button) { display: none; }
 
-    /* ─── BARRA SUPERIOR ──────────────────────────────── */
-    .topbar {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 20;
-      padding: max(env(safe-area-inset-top, 0px), 16px) 20px 48px;
-      background: var(--overlay-top);
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      pointer-events: none;
-    }
-
-    .brand {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--fg-dim);
-    }
-
-    .model-label {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--fg-dim);
-      text-align: right;
-      text-transform: capitalize;
-      letter-spacing: 0.02em;
-    }
-
-    /* ─── CONTROLES INFERIORES ────────────────────────── */
-    .controls {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      z-index: 20;
-      padding: 60px 24px max(env(safe-area-inset-bottom, 0px), 28px);
-      background: var(--overlay-bot);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-      touch-action: pan-y;  /* el deslizamiento horizontal llega al selector de modelos */
+    /* ─── TEXTOS Y BOTÓN DE AR ────────────────────────── */
+    .texto h1 { font-size: clamp(17px, 5vw, 3.1vh); font-weight: 500; line-height: 1.25; }
+    .hint {
+      margin-top: .7vh; font-size: clamp(9.5px, 3.05vw, 1.9vh); line-height: 1.5; color: rgba(255,255,255,.9);
+      white-space: nowrap;          /* dos líneas exactas */
     }
 
     .ar-btn {
       display: flex;
       align-items: center;
-      gap: 9px;
+      gap: .4em;
       background: var(--accent);
-      color: #08090D;
+      color: #005C7E;
       border: none;
       border-radius: 100px;
-      padding: 15px 30px;
-      font-size: 15px;
+      padding: .28em 1.05em .34em;
+      font-size: clamp(19px, 6vw, 3.8vh);
+      line-height: 1.1;
       font-weight: 700;
       font-family: inherit;
       cursor: pointer;
-      letter-spacing: 0.01em;
-      box-shadow: 0 0 40px var(--accent-glow);
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      transition: transform 0.12s ease;
       -webkit-tap-highlight-color: transparent;
     }
+    .ar-btn svg { width: .9em; height: .9em; }
+    .ar-btn:active { transform: scale(0.96); }
 
-    .ar-btn:active {
-      transform: scale(0.96);
-      box-shadow: 0 0 20px var(--accent-glow);
-    }
-
-    .hint {
-      font-size: 11px;
-      color: var(--fg-dim);
-      text-align: center;
-      letter-spacing: 0.04em;
+    /* Celular acostado (o computador): la pieza a la izquierda y lo demás a la derecha */
+    @media (orientation: landscape) {
+      .pagina {
+        display: grid; grid-template-columns: auto minmax(0, 1fr); grid-auto-rows: auto;
+        column-gap: 5vw; row-gap: 3vh; align-content: center; justify-items: center; padding: 4vh 6vw 4vh 9vw;
+      }
+      .pagina .cuadro, .pagina.varias .cuadro { grid-column: 1; grid-row: 1 / span 4; width: auto; height: min(90vh, 46vw); margin: 0; }
+      .titulos, .picker, .texto, .ar-btn { grid-column: 2; }
+      .titulos { font-size: clamp(15px, 6.4vh, 3.4vw); margin-left: 0; justify-self: stretch; }
+      .texto h1 { font-size: clamp(15px, 5.6vh, 3vw); }
+      .hint { font-size: clamp(9px, 3.4vh, 1.42vw); }
+      .ar-btn { font-size: clamp(17px, 6.6vh, 3.4vw); }
+      .pagina .triangulos { width: 7vh; }
+      .pagina .flecha { max-width: none; width: 26vh; }
     }
 
     /* ─── PANTALLA BIENVENIDA (sin ?modelo) ────────────── */
@@ -170,7 +167,7 @@
       padding: 14px 28px;
       border-radius: 100px;
       background: var(--accent);
-      color: #08090D;
+      color: #005C7E;
       font-size: 15px;
       font-weight: 700;
       text-decoration: none;
@@ -184,7 +181,7 @@
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--accent);
-      border: 1px solid rgba(0,229,200,0.3);
+      border: 1px solid rgba(147,192,31,0.5);
       padding: 5px 12px;
       border-radius: 100px;
     }
@@ -218,10 +215,8 @@
     .picker {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      width: 100%;
-      max-width: 360px;
+      justify-content: center;
+      gap: 4vw;
       touch-action: pan-y;
       user-select: none;
       -webkit-user-select: none;
@@ -229,13 +224,13 @@
 
     .nav-btn {
       flex: none;
-      width: 44px;
-      height: 44px;
+      width: clamp(34px, 9.5vw, 5vh);
+      height: clamp(34px, 9.5vw, 5vh);
       display: grid;
       place-items: center;
       border-radius: 50%;
-      border: 1px solid rgba(232,235,244,0.18);
-      background: rgba(8,9,13,0.55);
+      border: 1.5px solid rgba(255,255,255,0.55);
+      background: rgba(0,38,56,0.25);
       color: var(--fg);
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
@@ -245,22 +240,16 @@
     .nav-btn:active { transform: scale(0.92); border-color: var(--accent); }
 
     .picker-info {
-      flex: 1;
-      min-width: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .picker-name {
-      font-size: 14px;
-      font-weight: 600;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: clamp(11px, 3.2vw, 1.9vh);
+      font-weight: 500;
       white-space: nowrap;
-      text-shadow: 0 1px 10px rgba(8,9,13,0.9);
       transition: opacity 0.2s ease;
     }
 
@@ -272,7 +261,7 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: rgba(232,235,244,0.25);
+      background: rgba(255,255,255,0.35);
       transition: background 0.2s ease, width 0.2s ease;
     }
 
@@ -288,8 +277,8 @@
       max-width: calc(100% - 32px);
       padding: 10px 16px;
       border-radius: 10px;
-      background: rgba(20,22,30,0.95);
-      border: 1px solid rgba(232,235,244,0.12);
+      background: rgba(0,38,56,0.95);
+      border: 1px solid rgba(255,255,255,0.2);
       font-size: 13px;
       text-align: center;
     }
@@ -300,57 +289,65 @@
 </head>
 <body>
 
-  <!-- ── VISOR 3D ── -->
-  <model-viewer
-    id="viewer"
-    ar
-    ar-modes="webxr scene-viewer quick-look"
-    ar-usdz-max-texture-size="1024"
-    camera-controls
-    autoplay
-    auto-rotate
-    auto-rotate-delay="1500"
-    rotation-per-second="10deg"
-    shadow-intensity="1"
-    shadow-softness="1"
-    environment-image="neutral"
-    tone-mapping="neutral"
-    exposure="0.8"
-    touch-action="none"
-  ></model-viewer>
+  <!-- ── PÁGINA: nombres, recuadro con la pieza, selector, textos y botón de AR ── -->
+  <div class="pagina" id="pagina">
+    <svg class="triangulos" viewBox="0 0 100 290" aria-hidden="true">
+      <polygon points="0,0 100,0 0,72" fill="#0091B5"/><polygon points="0,78 100,150 0,228" fill="#93C01F"/><polygon points="100,150 100,290 0,228" fill="#0091B5"/>
+    </svg>
+    <img class="flecha" src="pruebas/tarjeta/portada-flecha.png?v=2" alt="">
 
-  <!-- ── BARRA SUPERIOR ── -->
-  <div class="topbar" id="topbar" hidden>
-    <span class="brand">Interacción Virtual</span>
-    <span class="model-label" id="modelLabel"></span>
-  </div>
+    <div class="titulos"><span class="campana" id="tituloCampana">Innercia</span><span id="tituloPieza"></span></div>
 
-  <!-- ── CONTROLES ── -->
-  <div class="controls" id="controls" hidden>
-    <!-- Selector de modelos: solo en colecciones con 2 o más modelos -->
+    <!-- ── VISOR 3D ── -->
+    <div class="cuadro">
+      <model-viewer
+        id="viewer"
+        ar
+        ar-modes="webxr scene-viewer quick-look"
+        ar-usdz-max-texture-size="1024"
+        camera-controls
+        autoplay
+        auto-rotate
+        auto-rotate-delay="1500"
+        rotation-per-second="10deg"
+        interaction-prompt="none"
+        shadow-intensity="1"
+        shadow-softness="1"
+        environment-image="neutral"
+        tone-mapping="neutral"
+        exposure="0.8"
+        touch-action="none"
+      ></model-viewer>
+    </div>
+
+    <!-- Selector de piezas: solo en campañas con 2 o más piezas -->
     <div class="picker" id="picker" hidden>
-      <button class="nav-btn" id="prevBtn" aria-label="Modelo anterior">
+      <button class="nav-btn" id="prevBtn" aria-label="Pieza anterior">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <div class="picker-info">
         <span class="picker-name" id="pickerName"></span>
         <div class="dots" id="dots"></div>
       </div>
-      <button class="nav-btn" id="nextBtn" aria-label="Modelo siguiente">
+      <button class="nav-btn" id="nextBtn" aria-label="Pieza siguiente">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
       </button>
     </div>
 
-    <button class="ar-btn" id="arBtn" onclick="activarAR()">
+    <div class="texto">
+      <h1>Míralo en<br>tu espacio</h1>
+      <p class="hint" id="hintText">&nbsp;<br>&nbsp;</p>
+    </div>
+
+    <button class="ar-btn" id="arBtn" onclick="activarAR()" hidden>
       <!-- Icono AR -->
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
         <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
         <path d="M12 8l-4 2.5v5L12 18l4-2.5v-5L12 8z"/>
       </svg>
-      Ver en Realidad Aumentada
+      Ver en AR
     </button>
-    <span class="hint" id="hintText">Arrastra para rotar · Pellizca para hacer zoom</span>
   </div>
 
   <!-- ── PANTALLA DE BIENVENIDA ── -->
@@ -398,8 +395,7 @@
     const viewer     = document.getElementById('viewer');
     const loading    = document.getElementById('loading');
     const welcome    = document.getElementById('welcome');
-    const controls   = document.getElementById('controls');
-    const topbar     = document.getElementById('topbar');
+    const pagina     = document.getElementById('pagina');
     const hintText   = document.getElementById('hintText');
     const arBtn      = document.getElementById('arBtn');
     const picker     = document.getElementById('picker');
@@ -515,7 +511,7 @@
         lista = definicion.modelos.map(m => typeof m === 'string'
           ? { id: m, nombre: m }
           : { id: m.id, nombre: m.nombre || m.id, archivo: m.archivo, usdz: m.usdz, version: m.version });
-        if (definicion.titulo) document.querySelector('.brand').textContent = definicion.titulo;
+        document.getElementById('tituloCampana').textContent = definicion.titulo || coleccion;
         // Luz guardada para la campaña en Flujo AR (paso 4)
         if (typeof definicion.exposicion === 'number') viewer.exposure = definicion.exposicion;
         if (Number.isFinite(exposicionUrl)) viewer.exposure = exposicionUrl;
@@ -547,10 +543,12 @@
     function mostrarModelo(i) {
       actual = (i + lista.length) % lista.length;
       const m = lista[actual];
-      document.getElementById('modelLabel').textContent = capitalizar(m.nombre);
+      // «001_ISLA_AXE» → «ISLA AXE» (el mismo nombre limpio de la tarjeta)
+      document.getElementById('tituloPieza').textContent =
+        String(m.nombre || '').replace(/^\d+[_\-\s]+/, '').replace(/_/g, ' ').trim() || m.nombre;
 
       if (lista.length > 1) {
-        pickerName.textContent = m.nombre;
+        pickerName.textContent = `Pieza ${actual + 1} de ${lista.length}`;
         picker.classList.add('cargando');
         [...dots.children].forEach((d, k) => d.classList.toggle('activo', k === actual));
         // Recordar la posición en la URL (sin recargar) para compartir o recargar
@@ -569,19 +567,21 @@
 
     function armarSelector() {
       picker.hidden = false;
+      pagina.classList.add('varias');
       dots.innerHTML = lista.map(() => '<span class="dot"></span>').join('');
       document.getElementById('prevBtn').onclick = () => mostrarModelo(actual - 1);
       document.getElementById('nextBtn').onclick = () => mostrarModelo(actual + 1);
 
-      // Deslizar sobre la barra inferior (no sobre el modelo, que usa el arrastre para rotar)
+      // Deslizar sobre el selector o los textos (no sobre el modelo, que usa el arrastre para rotar)
       let x0 = null;
-      controls.addEventListener('pointerdown', e => { x0 = e.clientX; });
-      controls.addEventListener('pointerup', e => {
+      const zona = [picker, document.querySelector('.texto')];
+      zona.forEach(z => z.addEventListener('pointerdown', e => { x0 = e.clientX; }));
+      zona.forEach(z => z.addEventListener('pointerup', e => {
         if (x0 === null) return;
         const dx = e.clientX - x0;
         x0 = null;
         if (Math.abs(dx) > 50) mostrarModelo(actual + (dx < 0 ? 1 : -1));
-      });
+      }));
 
       document.addEventListener('keydown', e => {
         if (e.key === 'ArrowRight') mostrarModelo(actual + 1);
@@ -617,13 +617,11 @@
       if (interfazVisible) return;
       interfazVisible = true;
       ocultarLoading();
-      topbar.hidden = false;
-      controls.hidden = false;
 
-      // Sin AR disponible (computador), se oculta el botón y se sugiere abrir en el celular
+      // Sin AR disponible (computador), se oculta el botón y se sugiere abrir en el celular. Siempre dos líneas.
       arBtn.hidden = !viewer.canActivateAR;
-      if (isIOS || isAndroid) hintText.textContent = 'Toca "Ver en AR" para proyectar en tu espacio';
-      else hintText.textContent = 'Arrastra para rotar · Scroll para zoom · Abre desde tu celular para AR';
+      if (isIOS || isAndroid) hintText.innerHTML = 'Toca «Ver en AR» y apunta al piso para verlo a tamaño real.<br>Gíralo con un dedo y acércalo con dos.';
+      else hintText.innerHTML = 'Arrástralo para girarlo y usa la rueda para acercarlo.<br>Ábrelo desde tu celular para verlo en realidad aumentada.';
     }
 
     function mostrarBienvenida(titulo, mensaje) {
