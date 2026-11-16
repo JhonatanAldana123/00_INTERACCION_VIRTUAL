@@ -9,7 +9,8 @@
 
   1. Guarda una copia del original en models\<Campaña>\<Pieza>\_original\
   2. Repara el mapeo (UV) de objetos copiados, borra datos sin usar y une los objetos que
-     comparten material (reparar-uv.js + prune + dedup + flatten + join)
+     comparten material (reparar-uv.js + prune + dedup + flatten + join). Si la malla tiene más de
+     400.000 triángulos, la aligera (weld + simplify): con más, el AR de Android no abre
   3. Limita las texturas a 2048 px (resize)
   4. Convierte las texturas PNG a JPEG, salvo que haya materiales transparentes (jpeg)
   5. Comprime la geometría con Draco (draco)
@@ -29,6 +30,7 @@ param(
   [string]$Nombre,                                  # nombre de la pieza (por defecto, el del archivo)
   [int]$MaxTextura = 2048,                          # lado máximo de las texturas en píxeles
   [int]$CalidadJpeg = 85,                           # 1-100
+  [int]$MaxTriangulos = 400000,                     # si la malla tiene más, se aligera sola (0 = no tocarla)
   [switch]$SinPreguntas                             # desde Flujo AR: nunca esperar respuesta en la consola
 )
 
@@ -121,7 +123,33 @@ Ejecutar @('flatten', "$Temp\d.glb", "$Temp\f.glb")
 Ejecutar @('join', "$Temp\f.glb", "$Temp\j.glb")
 # Centra la pieza en el origen y apoya su base en el piso (y = 0): en AR aparece donde el cliente
 # toca, sin quedar corrida ni hundida en el suelo
-Ejecutar @('center', "$Temp\j.glb", "$Temp\1.glb", '--pivot', 'below')
+Ejecutar @('center', "$Temp\j.glb", "$Temp\c.glb", '--pivot', 'below')
+
+# Mallas demasiado densas: el AR de Android (Scene Viewer) no abre piezas muy pesadas; el botón «Ver en AR»
+# parece no hacer nada y la cámara nunca aparece. Pasó con la isla de AXE (1.155.196 triángulos, 16/11/2026),
+# mientras las piezas de hasta ~790.000 sí abrían. Si la pieza pasa del límite se aligera la malla sola
+# (simplify de meshoptimizer: quita triángulos donde menos se nota, sin cambiar la forma ni las texturas).
+$denso = Analizar "$Temp\c.glb"
+$simplificado = $null
+if ($MaxTriangulos -gt 0 -and $denso.triangulos -gt $MaxTriangulos) {
+  Write-Host "   La malla tiene $($denso.triangulos) triangulos (limite $MaxTriangulos): se aligera para que el AR abra" -ForegroundColor Yellow
+  Ejecutar @('weld', "$Temp\c.glb", "$Temp\w.glb")
+  $actual = "$Temp\w.glb"; $n = 0
+  # Primero con muy poco error permitido; si no alcanza, se permite un poco más (como máximo 1 % del tamaño de cada parte)
+  foreach ($errorMax in 0.001, 0.003, 0.01) {
+    $tris = (Analizar $actual).triangulos
+    if ($tris -le $MaxTriangulos) { break }
+    $n++
+    $ratio = [math]::Round([math]::Max(0.05, $MaxTriangulos / $tris * 0.97), 4).ToString([Globalization.CultureInfo]::InvariantCulture)
+    Ejecutar @('simplify', $actual, "$Temp\s$n.glb", '--ratio', $ratio, '--error', $errorMax.ToString([Globalization.CultureInfo]::InvariantCulture))
+    $actual = "$Temp\s$n.glb"
+  }
+  Copy-Item $actual "$Temp\1.glb" -Force
+  $simplificado = [pscustomobject]@{ antes = $denso.triangulos; despues = (Analizar "$Temp\1.glb").triangulos }
+  Write-Host "   Malla aligerada: $($simplificado.antes) -> $($simplificado.despues) triangulos" -ForegroundColor Green
+} else {
+  Copy-Item "$Temp\c.glb" "$Temp\1.glb" -Force
+}
 
 # ── 3. Tamaño de texturas ──────────────────────────────────
 Paso "3/5 Limitando texturas a $MaxTextura px"
@@ -189,7 +217,12 @@ if ($reparacion.sinReparar -gt 0) {
 }
 
 # Avisos si el modelo sigue pesado: esto ya se corrige en Rhino, no en el script
-if ($despues.triangulos -gt 100000) {
+if ($simplificado) {
+  Write-Host "`nAVISO: la malla venia muy densa ($($simplificado.antes) triangulos) y se aligero sola a $($simplificado.despues) para que el AR abra. Revisa la pieza en el visor; para la proxima, baja la densidad de malla al exportar desde Rhino (ver docs\OPTIMIZAR_MODELOS.md)." -ForegroundColor Yellow
+  if ($despues.triangulos -gt $MaxTriangulos * 1.15) {
+    Write-Host "AVISO: aun asi quedo por encima del limite ($MaxTriangulos). Puede que 'Ver en AR' no abra en Android: hay que bajar la malla en Rhino." -ForegroundColor Red
+  }
+} elseif ($despues.triangulos -gt 100000) {
   Write-Host "`nAVISO: mas de 100.000 triangulos. Baja la densidad de malla en Rhino (ver docs\OPTIMIZAR_MODELOS.md)." -ForegroundColor Yellow
 }
 if ($despues.bytes -gt 5MB) {
