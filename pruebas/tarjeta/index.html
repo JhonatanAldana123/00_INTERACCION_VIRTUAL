@@ -154,8 +154,8 @@
     <label>Firmeza de posición <b id="vPos"></b><input type="range" id="rPos" min="0" max="400" step="10"></label>
     <label>Firmeza de giro <b id="vGiro"></b><input type="range" id="rGiro" min="0" max="600" step="10"></label>
     <label>Ignorar giros bruscos de más de <b id="vSalto"></b><input type="range" id="rSalto" min="5" max="90" step="5"></label>
-    <label>Anticipo al mover o girar <b id="vAdel"></b><input type="range" id="rAdel" min="0" max="150" step="5"></label>
-    <small>Firmeza: más a la derecha = más quieto con la tarjeta quieta. Anticipo: súbelo si al girar el contenido llega tarde; bájalo si se pasa de largo. Anota los cuatro números que mejor se vean.</small>
+    <label>Retraso de la cámara frente al giroscopio <b id="vAdel"></b><input type="range" id="rAdel" min="0" max="200" step="10"></label>
+    <small>Firmeza: más a la derecha = más quieto. Retraso: si al mover el celular el contenido se adelanta a la tarjeta, súbelo; si se atrasa, bájalo. Anota los cuatro números que mejor se vean.</small>
     <small id="fluidez">Fluidez: midiendo…</small>
   </div>
 
@@ -182,7 +182,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116a';
+    const VERSION = '20261116b';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -535,14 +535,13 @@
       pos: numero('pos', 120) || 1,       // ms de suavizado de la posición con la tarjeta quieta
       giro: numero('giro', 220) || 1,     // ms de suavizado del giro con la tarjeta quieta
       salto: numero('salto', 25),         // grados: giros bruscos mayores a esto se ignoran un instante
-      adelanto: numero('adelanto', 40),   // ms que se anticipa el movimiento (compensa lo que tarda la cámara en verse)
+      retraso: numero('retraso', 60),     // ms que va la imagen de la cámara por detrás del giroscopio
     };
     const pNueva = new THREE.Vector3(), qNueva = new THREE.Quaternion(), sNueva = new THREE.Vector3();
     const pSuave = new THREE.Vector3(), qSuave = new THREE.Quaternion();
-    // Última lectura de MindAR y velocidades medidas entre lecturas (posición y giro por segundo)
-    const pMed = new THREE.Vector3(), qMed = new THREE.Quaternion(), vel = new THREE.Vector3(), omega = new THREE.Vector3();
-    const pSal = new THREE.Vector3(), qSal = new THREE.Quaternion(), vTmp = new THREE.Vector3(), qTmp = new THREE.Quaternion();
-    const rampa = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    // Última lectura de MindAR: tal cual llegó (cruda) y llevada al momento actual con el giroscopio (med)
+    const pCruda = new THREE.Vector3(), qCruda = new THREE.Quaternion(), pMed = new THREE.Vector3(), qMed = new THREE.Quaternion();
+    const vTmp = new THREE.Vector3(), wTmp = new THREE.Vector3(), qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion();
     // Giro pequeño (cuaternión) → vector eje × ángulo en radianes, y al revés
     function aVector(q, v) {
       if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
@@ -555,11 +554,91 @@
       const s = Math.sin(a / 2) / a;
       return q.set(v.x * s, v.y * s, v.z * s, Math.cos(a / 2));
     }
-    let hayPose = false, tSalto = 0, tCuadro = 0, tMed = 0;
+    // ── Giroscopio ──────────────────────────────────────────────────────────────────────────────
+    // Lo que la cámara mide del giro de la tarjeta trae mucho ruido (se ve como saltos). El giroscopio del celular,
+    // en cambio, mide casi sin ruido cuánto gira el CELULAR. Con la tarjeta quieta, todo lo que cambia el ángulo
+    // entre ambos es movimiento del celular, así que:
+    //   · el giro del contenido se mueve con el giroscopio (firme y sin retraso), y
+    //   · la lectura de la cámara solo lo corrige despacio (si de verdad se mueve la tarjeta, la corrección se acelera).
+    // Para no depender de cómo cada celular numera sus ejes, la página lo comprueba sola: compara lo que dice el
+    // giroscopio con lo que ve la cámara en 8 combinaciones posibles (4 giros de pantalla × 2 sentidos) y usa la
+    // que coincide. Si ninguna coincide, o no hay sensor, sigue el suavizado simple de siempre.
+    const HIPOTESIS = [];
+    for (const s of [1, -1]) for (const k of [0, 1, 2, 3]) HIPOTESIS.push({ s, k, puntos: 0 });
+    const giroscopio = { q: new THREE.Quaternion(), t: 0, hist: [], elegida: null, comprobada: false, energia: 0, energiaXY: 0 };
+    const pantallaParada = () => innerHeight >= innerWidth;
+    function reiniciarGiroscopio() {
+      for (const h of HIPOTESIS) h.puntos = 0;
+      giroscopio.energia = giroscopio.energiaXY = 0; giroscopio.comprobada = false;
+      // Con el celular parado los ejes del sensor y de la cámara son los mismos: se usa esa de entrada
+      giroscopio.elegida = pantallaParada() ? HIPOTESIS[0] : null;
+    }
+    reiniciarGiroscopio();
+    function alMover(e) {
+      const r = e.rotationRate;
+      if (!r || r.alpha == null || r.beta == null || r.gamma == null) return;
+      const t = performance.now(), dt = Math.min(0.1, (t - (giroscopio.t || t)) / 1000);
+      giroscopio.t = t;
+      // Velocidades de giro en los ejes del celular: beta → x, gamma → y, alpha → z (grados por segundo)
+      giroscopio.q.multiply(aGiro(vTmp.set(r.beta, r.gamma, r.alpha).multiplyScalar(Math.PI / 180 * dt), qTmp)).normalize();
+      giroscopio.hist.push({ t, q: giroscopio.q.clone() });
+      if (giroscopio.hist.length > 180) giroscopio.hist.shift();
+    }
+    function pedirGiroscopio() {
+      if (numero('giroscopio', 1) === 0 || typeof DeviceMotionEvent === 'undefined') return;
+      const escuchar = () => addEventListener('devicemotion', alMover);
+      try {
+        // iPhone pide permiso (solo se puede preguntar dentro de un toque: por eso se llama desde «Comenzar»)
+        if (typeof DeviceMotionEvent.requestPermission === 'function') DeviceMotionEvent.requestPermission().then(r => { if (r === 'granted') escuchar(); }).catch(() => {});
+        else escuchar();
+      } catch (e) { /* sin sensor: se sigue sin él */ }
+    }
+    function orientacionEn(t) {
+      const h = giroscopio.hist;
+      for (let i = h.length - 1; i >= 0; i--) if (h[i].t <= t) return h[i].q;
+      return h[0].q;
+    }
+    // Cuánto giró el celular entre dos instantes (vector eje × ángulo, en los ejes del celular)
+    const giroEntre = (t0, t1, v) => aVector(qTmp.copy(orientacionEn(t0)).invert().multiply(orientacionEn(t1)), v);
+    // De los ejes del celular a los de la cámara, según la hipótesis (giro de pantalla de k × 90° y sentido)
+    function aCamara(v, h) {
+      const x = v.x, y = v.y;
+      if (h.k === 1) v.set(-y, x, v.z); else if (h.k === 2) v.set(-x, -y, v.z); else if (h.k === 3) v.set(y, -x, v.z);
+      return v.multiplyScalar(h.s);
+    }
+    // Con cada lectura nueva de la cámara: ¿qué hipótesis explica lo que giró la tarjeta en la imagen?
+    function aprender(giroVisto, t0, t1) {
+      if (giroscopio.hist.length < 2) return;
+      giroEntre(t0 - cal.retraso, t1 - cal.retraso, wTmp);
+      const n2 = wTmp.lengthSq();
+      if (n2 < 1e-7) return;
+      if (giroscopio.energia > 0.5) {                                 // la evidencia vieja pesa cada vez menos
+        for (const h of HIPOTESIS) h.puntos /= 2;
+        giroscopio.energia /= 2; giroscopio.energiaXY /= 2;
+      }
+      giroscopio.energia += n2;
+      giroscopio.energiaXY += wTmp.x * wTmp.x + wTmp.y * wTmp.y;
+      // Si el celular gira hacia un lado, la tarjeta (quieta) se ve girar hacia el otro: de ahí el signo menos
+      for (const h of HIPOTESIS) h.puntos -= aCamara(vTmp.copy(wTmp), h).dot(giroVisto);
+      if (giroscopio.energiaXY < 0.02) return;                        // aún no se ha movido lo suficiente para saber
+      // La lectura de la cámara es ruidosa, así que se pide bastante evidencia: más para cambiar que para confirmar
+      const orden = [...HIPOTESIS].sort((a, b) => b.puntos - a.puntos);
+      const nota = h => h.puntos / giroscopio.energia;
+      const mejor = orden[0], actual = giroscopio.elegida;
+      if (mejor === actual) giroscopio.comprobada = nota(mejor) > 0.4 && nota(mejor) - nota(orden[1]) > 0.3;
+      else if (giroscopio.energiaXY > 0.05 && nota(mejor) > 0.5 && nota(mejor) - (actual ? nota(actual) : 0) > 0.6 && nota(mejor) - nota(orden[1]) > 0.3) {
+        giroscopio.elegida = mejor; giroscopio.comprobada = true;
+      } else if (actual && giroscopio.energiaXY > 0.05 && nota(actual) < -0.2) { giroscopio.elegida = null; giroscopio.comprobada = false; }
+    }
+    const giroscopioListo = ahora => giroscopio.elegida && giroscopio.hist.length > 5 && ahora - giroscopio.t < 250;
+
+    let hayPose = false, tSalto = 0, tCuadro = 0, tMed = 0, tGiro = 0;
     // Medidor de fluidez (se ve en «Calibrar»): cuadros dibujados y lecturas de la tarjeta por segundo
     const medidor = { cuadros: 0, lecturas: 0 };
     setInterval(() => {
-      if (!$('panel').hidden) $('fluidez').textContent = `Fluidez: ${medidor.cuadros} cuadros/s · ${medidor.lecturas} lecturas de la tarjeta/s · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'}`;
+      const g = !giroscopio.hist.length ? 'sin giroscopio' : !giroscopio.elegida ? 'giroscopio aprendiendo (mueve un poco el celular)'
+        : 'giroscopio activo' + (giroscopio.comprobada ? ' y comprobado' : '');
+      if (!$('panel').hidden) $('fluidez').textContent = `Fluidez: ${medidor.cuadros} cuadros/s · ${medidor.lecturas} lecturas de la tarjeta/s · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'} · ${g}`;
       medidor.cuadros = medidor.lecturas = 0;
     }, 1000);
     function cuadro() {
@@ -568,63 +647,46 @@
       tCuadro = ahora;
       if (!modoDemo && anclaGrupo) {
         if (anclaGrupo.visible) {
-          // Seguimiento firme y sin retraso, en tres partes:
-          //  1. Suavizado: quieta, la tarjeta se filtra fuerte (cal.pos / cal.giro en ms) y no tiembla. La profundidad,
-          //     que es lo que peor mide la cámara, se filtra el doble; el sitio en la imagen, que mide bien, menos.
-          //  2. Velocidad: se mide a qué velocidad se mueve y gira la tarjeta entre una lectura y la siguiente. Cuanto
-          //     más rápido va, menos se suaviza (un filtro lento es el que hacía que el giro llegara tarde).
-          //  3. Anticipo: lo que el suavizado todavía atrasa, más lo que tarda la imagen de la cámara (cal.adelanto), se
-          //     adelanta con esa velocidad. Así el contenido gira CON la tarjeta en vez de perseguirla. Quieta no se
-          //     anticipa nada, para no convertir el temblor de la medida en movimiento.
-          // Además se descartan las lecturas «locas»: si de un cuadro a otro la tarjeta aparece girada más de
+          // Antivibración. (El 14/11 se probó «anticipar» el movimiento con la velocidad medida por la cámara: con el
+          // ruido real de la cámara eso amplificaba los saltos, y se quitó el 16/11.)
+          //  · Con giroscopio: el contenido gira con el celular y la cámara solo corrige despacio (ver «Giroscopio»).
+          //  · Sin giroscopio: persigue a la lectura de la cámara con un retraso corto (cal.pos / cal.giro, en ms).
+          // Siempre se descartan las lecturas «locas»: si de una a la siguiente la tarjeta aparece girada más de
           // cal.salto grados, se espera un cuarto de segundo antes de creerle (suele ser un error de un instante).
           anclaGrupo.matrix.decompose(pNueva, qNueva, sNueva);
+          const conGiro = giroscopioListo(ahora) ? giroscopio.elegida : null;
           if (!hayPose || ahora - tUltimaVista > AGUANTE_MS) {
-            pSuave.copy(pNueva); qSuave.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva);
-            vel.set(0, 0, 0); omega.set(0, 0, 0); tMed = ahora; hayPose = true; tSalto = 0;
+            pSuave.copy(pNueva); qSuave.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva); pCruda.copy(pNueva); qCruda.copy(qNueva);
+            tMed = tGiro = ahora; hayPose = true; tSalto = 0;
           } else {
+            if (conGiro) {
+              // Lo que giró el celular desde el cuadro anterior se le aplica, al revés, a la tarjeta (y a la última lectura)
+              aGiro(aCamara(giroEntre(tGiro - cal.retraso, ahora - cal.retraso, wTmp), conGiro).negate(), qTmp2);
+              qSuave.premultiply(qTmp2); pSuave.applyQuaternion(qTmp2); qMed.premultiply(qTmp2); pMed.applyQuaternion(qTmp2);
+            }
+            tGiro = ahora;
             const dist = pNueva.length() || 1;
-            const esSalto = THREE.MathUtils.radToDeg(qMed.angleTo(qNueva)) > cal.salto || pMed.distanceTo(pNueva) / dist > 0.3;
+            const esSalto = THREE.MathUtils.radToDeg(qCruda.angleTo(qNueva)) > cal.salto || pCruda.distanceTo(pNueva) / dist > 0.3;
             if (esSalto && !tSalto) tSalto = ahora;
             if (!esSalto) tSalto = 0;
-            const creer = !esSalto || ahora - tSalto > 250;
-            if (creer && (!pNueva.equals(pMed) || !qNueva.equals(qMed))) {
-              // Llegó una lectura nueva: velocidad de traslado y de giro desde la anterior, promediada (~0,1 s)
-              const dtm = Math.min(0.2, Math.max(0.008, (ahora - tMed) / 1000));
-              if (esSalto) { vel.set(0, 0, 0); omega.set(0, 0, 0); }
-              else {
-                // Quieta se promedia largo (0,15 s) para que el temblor no parezca velocidad; en movimiento, corto
-                const aP = 1 - Math.exp(-dtm * (1 + vel.length() / dist / 0.067) / 0.15);
-                const aQ = 1 - Math.exp(-dtm * (1 + THREE.MathUtils.radToDeg(omega.length()) / 20) / 0.15);
-                vel.lerp(vTmp.copy(pNueva).sub(pMed).divideScalar(dtm), aP);
-                qTmp.copy(qMed).invert().premultiply(qNueva);
-                omega.lerp(aVector(qTmp, vTmp).divideScalar(dtm), aQ);
-              }
-              pMed.copy(pNueva); qMed.copy(qNueva); tMed = ahora;
+            if ((!esSalto || ahora - tSalto > 250) && (!pNueva.equals(pCruda) || !qNueva.equals(qCruda))) {
+              // Llegó una lectura nueva de la cámara
+              if (!esSalto) aprender(aVector(qTmp2.copy(qCruda).invert().premultiply(qNueva), vTmp.set(0, 0, 0)).clone(), tMed, ahora);
+              pCruda.copy(pNueva); qCruda.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva); tMed = ahora;
               medidor.lecturas++;
-            } else if (ahora - tMed > 200) {
-              // Sin lecturas nuevas: la velocidad vieja ya no vale
-              const f = Math.exp(-dt / 80); vel.multiplyScalar(f); omega.multiplyScalar(f);
             }
-            const rapidez = vel.length() / dist;                            // fracción de la distancia por segundo
-            const giroSeg = THREE.MathUtils.radToDeg(omega.length());       // grados por segundo
-            const tauP = cal.pos / (1 + Math.max(0, rapidez - 0.03) / 0.12), tauQ = cal.giro / (1 + Math.max(0, giroSeg - 12) / 12);
-            const kXY = 1 - Math.exp(-dt / (tauP * 0.6)), kZ = 1 - Math.exp(-dt / (tauP * 2));
-            pSuave.x += (pMed.x - pSuave.x) * kXY; pSuave.y += (pMed.y - pSuave.y) * kXY; pSuave.z += (pMed.z - pSuave.z) * kZ;
-            qSuave.slerp(qMed, 1 - Math.exp(-dt / tauQ));
+            const grados = THREE.MathUtils.radToDeg(qSuave.angleTo(qMed));
+            const tramo = pSuave.distanceTo(pMed) / dist;
+            if (conGiro) {
+              // Corrección lenta hacia la cámara; solo se acelera si la diferencia es grande de verdad (la tarjeta se movió)
+              qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro * 3 / (1 + (grados / 8) ** 2))));
+              pSuave.lerp(pMed, 1 - Math.exp(-dt / (cal.pos / (1 + tramo * 30))));
+            } else {
+              pSuave.lerp(pMed, 1 - Math.exp(-dt / (cal.pos / (1 + tramo * 30))));
+              qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro / (1 + grados / 4))));
+            }
           }
-          // Anticipo: solo cuando hay movimiento claro, y con tope para que un error nunca dispare el contenido
-          {
-            const dist = pSuave.length() || 1;
-            const rapidez = vel.length() / dist, giroSeg = THREE.MathUtils.radToDeg(omega.length());
-            const cP = rampa(rapidez, 0.03, 0.13), cQ = rampa(giroSeg, 12, 35);
-            const tauP = cal.pos / (1 + Math.max(0, rapidez - 0.03) / 0.12), tauQ = cal.giro / (1 + Math.max(0, giroSeg - 12) / 12);
-            vTmp.copy(vel).multiplyScalar((tauP * 0.6 + cal.adelanto) / 1000 * cP).clampLength(0, dist * 0.12);
-            pSal.copy(pSuave).add(vTmp);
-            vTmp.copy(omega).multiplyScalar((tauQ + cal.adelanto) / 1000 * cQ).clampLength(0, 0.26);
-            qSal.copy(qSuave).premultiply(aGiro(vTmp, qTmp));
-          }
-          soporte.matrix.compose(pSal, qSal, sNueva);
+          soporte.matrix.compose(pSuave, qSuave, sNueva);
           soporte.matrixWorldNeedsUpdate = true;
           soporte.visible = true;
           tUltimaVista = ahora;
@@ -705,6 +767,7 @@
 
     async function comenzar(demo) {
       $('inicio').hidden = true;
+      pedirGiroscopio();
       // Dentro del toque: «despierta» el video para que después pueda sonar solo cuando aparezca la tarjeta
       video.src = 'video.mp4?v=' + VERSION;
       video.play().then(() => { if (estado !== 'video' || !videoArranco) video.pause(); }).catch(() => {});
@@ -735,13 +798,14 @@
         await new Promise(ok => setTimeout(ok, 350));      // el navegador termina de girar
         await mindar.start();
         hayPose = false; visible = false;
+        reiniciarGiroscopio();
         renderer.setAnimationLoop(cuadro);
       } catch (e) { console.error(e); location.reload(); }
       girando = false;
     });
 
     // ── Calibración en vivo ─────────────────────────────────────────────────────────────────────
-    const controles = [['rPos', 'vPos', 'pos', ' ms'], ['rGiro', 'vGiro', 'giro', ' ms'], ['rSalto', 'vSalto', 'salto', '°'], ['rAdel', 'vAdel', 'adelanto', ' ms']];
+    const controles = [['rPos', 'vPos', 'pos', ' ms'], ['rGiro', 'vGiro', 'giro', ' ms'], ['rSalto', 'vSalto', 'salto', '°'], ['rAdel', 'vAdel', 'retraso', ' ms']];
     for (const [r, v, clave, unidad] of controles) {
       $(r).value = cal[clave];
       $(v).textContent = cal[clave] + unidad;
@@ -759,7 +823,9 @@
     $('sonido').onclick = () => { video.muted = false; $('sonido').hidden = true; };
 
     // Para revisar desde el computador
-    window.__tarjeta = { get estado() { return estado; }, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv, alPerder, alEncontrar };
+    window.__tarjeta = { get estado() { return estado; }, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv, alPerder, alEncontrar,
+      // Para simular el seguimiento sin cámara: un «ancla» falsa y eventos de giroscopio inventados
+      prueba: { THREE, soporte, giroscopio, alMover, cuadro, ponerAncla(g) { anclaGrupo = g; modoDemo = false; soporte.matrixAutoUpdate = false; }, reiniciar() { hayPose = false; giroscopio.hist.length = 0; giroscopio.q.identity(); giroscopio.t = 0; reiniciarGiroscopio(); } } };
   </script>
 </body>
 </html>
