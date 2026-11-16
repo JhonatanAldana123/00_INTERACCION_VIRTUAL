@@ -90,10 +90,10 @@
     "exposicion": 1.17,
     "modelos": [
       {
-        "id": "001-isla-axe",
-        "nombre": "001_ISLA_AXE",
-        "archivo": "models/SHOWROOM/001_ISLA_AXE/001_ISLA_AXE.glb",
-        "version": "7518bc1ace"
+        "id": "001-isla-axe-nativa",
+        "nombre": "001_ISLA_AXE_NATIVA",
+        "archivo": "models/SHOWROOM/001_ISLA_AXE_NATIVA/001_ISLA_AXE_NATIVA.glb",
+        "version": "6ae587be94"
       }
     ]
   }
