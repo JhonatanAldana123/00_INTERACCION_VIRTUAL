@@ -131,12 +131,26 @@
     //   puntos propios,   128 px → sigue 20 a 59, y aguanta el mismo movimiento brusco que antes   ← el elegido
     //   puntos propios, 192 / 256 px → pierde la tarjeta con un movimiento de 12 px entre cuadros: descartado
     // opciones → elegirPuntos. propios:false deja los puntos de MindAR.
-    window.compilar = async ({ nombre = 'tarjeta-seguimiento', guardarlo = true, propios = true, ancho = 128, ...opciones } = {}) => {
-      const img = new Image();
-      img.src = nombre + '.png?t=' + Date.now();
-      await img.decode();
+    //
+    // DOS IMÁGENES, cada una para lo que hace mejor (medido el 16/11/2026 con fotos reales de la tarjeta impresa,
+    // inclinándola de 0° a 70°):
+    //   · ENCONTRAR la tarjeta (cuando aparece o se perdió): tarjeta-deteccion.png, una FOTO de la tarjeta impresa
+    //     enderezada. Se parece más a lo que ve la cámara (el azul impreso, el recuadro oscuro del sello) y la
+    //     reconoce desde cero hasta con 40–45° de inclinación; con la imagen del PDF solo hasta 30°.
+    //   · SEGUIRLA cuadro a cuadro: tarjeta-seguimiento.png (del PDF) con los puntos propios; es la que más puntos
+    //     sostiene (12 a 24) y aguanta hasta 60° de giro.
+    // Las dos imágenes tienen que estar en el mismo encuadre (1000 × 1778, la tarjeta completa).
+    window.compilar = async ({ nombre = 'tarjeta-seguimiento', deteccion = 'tarjeta-deteccion', guardarlo = true, propios = true, ancho = 128, ...opciones } = {}) => {
+      const cargar = async n => { const i = new Image(); i.src = n + '.png?t=' + Date.now(); await i.decode(); return i; };
+      const img = await cargar(nombre);
+      const imgDeteccion = deteccion ? await cargar(deteccion).catch(() => null) : null;
       const compilador = new window.MINDAR.IMAGE.Compiler();
-      await compilador.compileImageTargets([img], p => { document.title = 'Compilando ' + p.toFixed(0) + '%'; });
+      await compilador.compileImageTargets(imgDeteccion ? [img, imgDeteccion] : [img], p => { document.title = 'Compilando ' + p.toFixed(0) + '%'; });
+      if (imgDeteccion) {
+        if (img.width !== imgDeteccion.width || img.height !== imgDeteccion.height) throw new Error('Las dos imágenes deben medir lo mismo');
+        compilador.data[0].matchingData = compilador.data[1].matchingData;
+        compilador.data.length = 1;
+      }
       const seg = compilador.data[0].trackingData;
       const deMindAR = seg.map(t => t.points.length);
       if (propios) {
