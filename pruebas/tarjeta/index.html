@@ -182,7 +182,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116d';
+    const VERSION = '20261116e';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -596,7 +596,7 @@
     // Calibración (se ajusta en vivo con el botón «Calibrar»; también ?pos=120&giro=220&salto=25)
     const numero = (n, defecto) => { const v = parseFloat(params_(n)); return isNaN(v) ? defecto : v; };
     const cal = {
-      pos: numero('pos', 120) || 1,       // ms de suavizado de la posición con la tarjeta quieta
+      pos: numero('pos', 60) || 1,        // ms de suavizado de la posición con la tarjeta quieta
       giro: numero('giro', 220) || 1,     // ms de suavizado del giro con la tarjeta quieta
       salto: numero('salto', 25),         // grados: giros bruscos mayores a esto se ignoran un instante
       retraso: numero('retraso', 60),     // ms que va la imagen de la cámara por detrás del giroscopio
@@ -606,6 +606,9 @@
     // Última lectura de MindAR: tal cual llegó (cruda) y llevada al momento actual con el giroscopio (med)
     const pCruda = new THREE.Vector3(), qCruda = new THREE.Quaternion(), pMed = new THREE.Vector3(), qMed = new THREE.Quaternion();
     const vTmp = new THREE.Vector3(), wTmp = new THREE.Vector3(), qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion();
+    // Velocidad con que la tarjeta se desplaza en la imagen (sin la profundidad, que es ruidosa) y posición de salida
+    const vLat = new THREE.Vector3(), pSal = new THREE.Vector3();
+    const rampa = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     // Giro pequeño (cuaternión) → vector eje × ángulo en radianes, y al revés
     function aVector(q, v) {
       if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
@@ -700,9 +703,10 @@
     // Medidor de fluidez (se ve en «Calibrar»): cuadros dibujados y lecturas de la tarjeta por segundo
     const medidor = { cuadros: 0, lecturas: 0, ciclos: 0, lentos: 0 };
     setInterval(() => {
-      // Si con la cámara grande el motor trabaja a menos de 8 ciclos por segundo durante 4 s, se baja un escalón
+      // La cámara entrega 30 imágenes por segundo: ese es el techo del motor. Si con 1080 no llega a 20 ciclos por
+      // segundo (o a 12 con 720) durante 4 s, se baja un escalón: más vale seguir fluido que ver más detalle.
       const conCamara = mindar && !modoDemo && !reiniciando && estado !== 'inicio' && estado !== 'ar' && camaraInfo;
-      medidor.lentos = conCamara && !document.hidden && medidor.ciclos < 8 ? medidor.lentos + 1 : 0;
+      medidor.lentos = conCamara && !document.hidden && medidor.ciclos < (calidadCamara >= 1080 ? 20 : 12) ? medidor.lentos + 1 : 0;
       if (medidor.lentos >= 4 && !camaraFija && calidadCamara > 480) {
         calidadCamara = calidadCamara >= 1080 ? 720 : 480; medidor.lentos = 0;
         reiniciarCamara();
@@ -731,7 +735,8 @@
             // pieza seguía a la vista (estado «pieza»), viaja suave hasta la tarjeta en vez de saltar.
             if (!hayPose || !soporte.visible) { pSuave.copy(pNueva); qSuave.copy(qNueva); }
             pMed.copy(pNueva); qMed.copy(qNueva); pCruda.copy(pNueva); qCruda.copy(qNueva);
-            tMed = tGiro = ahora; hayPose = true; tSalto = 0;
+            tMed = tGiro = ahora; hayPose = true; tSalto = 0; vLat.set(0, 0, 0);
+            pSal.copy(pSuave);
           } else {
             if (conGiro) {
               // Lo que giró el celular desde el cuadro anterior se le aplica, al revés, a la tarjeta (y a la última lectura)
@@ -746,21 +751,34 @@
             if ((!esSalto || ahora - tSalto > 250) && (!pNueva.equals(pCruda) || !qNueva.equals(qCruda))) {
               // Llegó una lectura nueva de la cámara
               if (!esSalto) aprender(aVector(qTmp2.copy(qCruda).invert().premultiply(qNueva), vTmp.set(0, 0, 0)).clone(), tMed, ahora);
+              // Velocidad de desplazamiento de la tarjeta: lo que se movió desde la lectura anterior (ya descontado
+              // el giro del celular), sin la parte de profundidad, promediado ~0,1 s
+              if (esSalto) vLat.set(0, 0, 0);
+              else {
+                const dtm = Math.min(0.2, Math.max(0.008, (ahora - tMed) / 1000));
+                vTmp.copy(pNueva).sub(pMed).divideScalar(dtm);
+                wTmp.copy(pNueva).normalize();
+                vLat.lerp(vTmp.addScaledVector(wTmp, -vTmp.dot(wTmp)), 1 - Math.exp(-dtm / 0.1));
+              }
               pCruda.copy(pNueva); qCruda.copy(qNueva); pMed.copy(pNueva); qMed.copy(qNueva); tMed = ahora;
               medidor.lecturas++;
-            }
+            } else if (ahora - tMed > 200) vLat.multiplyScalar(Math.exp(-dt / 80));      // sin lecturas: la velocidad vieja ya no vale
             const grados = THREE.MathUtils.radToDeg(qSuave.angleTo(qMed));
             const tramo = pSuave.distanceTo(pMed) / dist;
-            if (conGiro) {
-              // Corrección lenta hacia la cámara; solo se acelera si la diferencia es grande de verdad (la tarjeta se movió)
-              qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro * 3 / (1 + (grados / 8) ** 2))));
-              pSuave.lerp(pMed, 1 - Math.exp(-dt / (cal.pos / (1 + tramo * 30))));
-            } else {
-              pSuave.lerp(pMed, 1 - Math.exp(-dt / (cal.pos / (1 + tramo * 30))));
-              qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro / (1 + grados / 4))));
-            }
+            const tauP = cal.pos / (1 + tramo * 30);
+            pSuave.lerp(pMed, 1 - Math.exp(-dt / tauP));
+            // Con giroscopio la cámara corrige el giro despacio, y se acelera cuando la diferencia ya no es ruido
+            // (la tarjeta se giró de verdad). Sin giroscopio se persigue a la lectura con un retraso corto.
+            if (conGiro) qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro * 2.5 / (1 + (grados / 5) ** 2))));
+            else qSuave.slerp(qMed, 1 - Math.exp(-dt / (cal.giro / (1 + grados / 4))));
+            // Adelanto del desplazamiento: lo que el suavizado y el proceso de la cámara atrasan (~40 ms) se compensa
+            // con la velocidad medida. Solo en la posición en la imagen, que la cámara mide bien (adelantar el giro
+            // con lecturas de cámara fue lo que produjo saltos el 14/11); solo con movimiento claro, y con tope.
+            const rapidez = vLat.length() / dist;
+            const adelanto = Math.min((tauP + 40) / 1000 * rampa(rapidez, 0.04, 0.14), rapidez ? 0.08 / rapidez : 0);
+            pSal.copy(pSuave).addScaledVector(vLat, adelanto);
           }
-          soporte.matrix.compose(pSuave, qSuave, sNueva);
+          soporte.matrix.compose(pSal, qSuave, sNueva);
           soporte.matrixWorldNeedsUpdate = true;
           soporte.visible = true;
           tUltimaVista = ahora;
@@ -770,6 +788,7 @@
           distTipica += (pSuave.length() - distTipica) * (distTipica ? 0.02 : 1);
         } else if (hayPose && soporte.visible) {
           const perdida = ahora - tUltimaVista;
+          vLat.set(0, 0, 0);
           if (perdida <= aguante()) {
             // Perdida hace poco: el contenido se queda quieto en el espacio (el giroscopio compensa el celular)
             const conGiro = giroscopioListo(ahora) ? giroscopio.elegida : null;
