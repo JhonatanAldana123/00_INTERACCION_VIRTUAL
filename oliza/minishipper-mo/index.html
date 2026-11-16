@@ -418,7 +418,65 @@
     let interfazVisible = false;
 
     // ── Flujo principal ─────────────────────────────────────
+    // ── Nitidez ─────────────────────────────────────────────
+    // El AR del navegador (WebXR) lo dibuja esta misma página, así que la calidad depende de lo que se haga aquí.
+    // Dos cosas lo hacían ver «pixelado y con ruido» (16/11/2026):
+    //  1. Las imágenes exportadas desde Rhino vienen sin mipmaps (versiones reducidas de cada imagen). Sin ellos,
+    //     cuando la pieza se ve pequeña o lejos, cada punto de la pantalla toma un punto suelto de una imagen de
+    //     2048 px y la gráfica chispea. Se activan los mipmaps y el filtro que afina las superficies inclinadas.
+    //  2. El AR se dibuja a la resolución «recomendada» por Android, que es bastante menor que la de la pantalla.
+    //     Se pide más (?nitidezar=1 vuelve a lo normal si un celular se pone lento).
+    const LINEAL_CON_MIPMAPS = 9987;
+    const interno = nombre => {
+      for (let p = viewer; p; p = Object.getPrototypeOf(p)) {
+        const s = Object.getOwnPropertySymbols(p).find(x => x.description === nombre);
+        if (s) return viewer[s];
+      }
+      return null;
+    };
+    function afinarImagenes() {
+      try {
+        // Lo que model-viewer permite cambiar de forma oficial: el filtro de cada imagen
+        for (const m of viewer.model.materials) {
+          const pbr = m.pbrMetallicRoughness;
+          for (const ti of [pbr.baseColorTexture, pbr.metallicRoughnessTexture, m.normalTexture, m.occlusionTexture, m.emissiveTexture]) {
+            if (ti && ti.texture) ti.texture.sampler.setMinFilter(LINEAL_CON_MIPMAPS);
+          }
+        }
+      } catch (e) { /* si cambia la versión de model-viewer, la pieza se ve igual que antes */ }
+      try {
+        // Y dos ajustes que model-viewer no expone: el afinado de superficies inclinadas y la resolución del AR
+        const motor = interno('renderer'), escena = interno('scene');
+        const tres = motor && motor.threeRenderer;
+        if (!tres) return;
+        const maximo = Math.min(8, tres.capabilities.getMaxAnisotropy());
+        const vistas = new Set();
+        if (escena) escena.traverse(o => {
+          for (const mat of [].concat(o.material || [])) {
+            for (const clave of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']) {
+              const t = mat[clave];
+              if (!t || vistas.has(t)) continue;
+              vistas.add(t);
+              // Cambiar solo el filtro no basta: la imagen se cargó sin mipmaps. Se pide generarlos y se suelta
+              // la copia que ya estaba en la tarjeta gráfica para que se vuelva a subir completa.
+              if (t.generateMipmaps && t.anisotropy >= maximo) continue;
+              t.generateMipmaps = true;
+              t.minFilter = 1008;                // LinearMipmapLinearFilter de three
+              t.anisotropy = maximo;
+              t.dispose();
+              t.needsUpdate = true;
+            }
+          }
+        });
+        const pintar = interno('needsRender');
+        if (pintar) pintar.call(viewer);
+        const pedida = parseFloat(new URLSearchParams(location.search).get('nitidezar'));
+        if (tres.xr && !tres.xr.isPresenting) tres.xr.setFramebufferScaleFactor(pedida > 0 ? pedida : 2);
+      } catch (e) { /* ídem */ }
+    }
+
     viewer.addEventListener('load', () => {
+      afinarImagenes();
       mostrarInterfaz();
       picker.classList.remove('cargando');
       precargar(actual + 1);

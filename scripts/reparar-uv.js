@@ -93,6 +93,11 @@ if (lineasQuitadas) {
 }
 
 // Reescribe el .glb: el JSON cambia, el bloque binario queda igual
+// Rhino exporta las imágenes con filtro «lineal», sin mipmaps (versiones reducidas): cuando la pieza se ve
+// pequeña o lejos, la gráfica chispea y se ve con ruido (se notó en el AR del navegador, 16/11/2026).
+// 9987 = lineal con mipmaps: el visor los genera al cargar.
+for (const s of gltf.samplers || []) s.minFilter = 9987;
+
 let json = Buffer.from(JSON.stringify(gltf));
 if (json.length % 4) json = Buffer.concat([json, Buffer.alloc(4 - (json.length % 4), 0x20)]);
 const resto = b.slice(inicioBin);
