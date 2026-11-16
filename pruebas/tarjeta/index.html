@@ -156,6 +156,7 @@
     <label>Ignorar giros bruscos de más de <b id="vSalto"></b><input type="range" id="rSalto" min="5" max="90" step="5"></label>
     <label>Anticipo al mover o girar <b id="vAdel"></b><input type="range" id="rAdel" min="0" max="150" step="5"></label>
     <small>Firmeza: más a la derecha = más quieto con la tarjeta quieta. Anticipo: súbelo si al girar el contenido llega tarde; bájalo si se pasa de largo. Anota los cuatro números que mejor se vean.</small>
+    <small id="fluidez">Fluidez: midiendo…</small>
   </div>
 
   <div class="abajo" id="abajo" hidden>
@@ -181,7 +182,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261114k';
+    const VERSION = '20261116a';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -323,7 +324,9 @@
       const tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
       pieza.position.set(-centro.x, -caja.min.y, -centro.z);      // apoyada en su base y centrada
       giro.add(pieza);
-      escalaMini = 1.25 / Math.max(tam.x, tam.y, tam.z);          // la miniatura cabe en la tarjeta
+      grupoPieza.userData.tam = tam;
+      // La miniatura cabe en la tarjeta: ni más alta que ella ni mucho más ancha
+      escalaMini = Math.min(ALTO * 0.9 / tam.y, 1.8 / Math.hypot(tam.x, tam.z));
       aplicarEscala();
       // El AR a tamaño real lo hace el mismo componente del visor (se carga aparte para no frenar el arranque)
       if (piezaInfo.usdz) mv.setAttribute('ios-src', piezaInfo.usdz);
@@ -336,13 +339,17 @@
     }
 
     function aplicarEscala() {
-      // La pieza queda PARADA sobre la tarjeta (su «arriba» sale de la cara de la tarjeta) y con el frente hacia
-      // el borde inferior: se deja la tarjeta en una mesa y se le da la vuelta para verla por todos lados.
-      grupoPieza.rotation.set(Math.PI / 2, 0, 0);
-      grupoPieza.position.set(0, 0, 0);
-      grupoPieza.userData.escala = tamanoReal ? 1 / ANCHO_M : escalaMini;      // tamaño verdadero o miniatura
-      if (!modoDemo) giro.rotation.y = 0;
-      grupoPieza.scale.setScalar(grupoPieza.userData.escala);
+      // La pieza queda DE PIE con la tarjeta de frente a la cámara: su «arriba» es el arriba de la tarjeta y su
+      // frente mira hacia quien la sostiene. (Antes se paraba sobre la cara de la tarjeta, para dejarla en una mesa
+      // y rodearla; en esos ángulos tan inclinados la cámara pierde la tarjeta, así que se cambió el 16/11/2026.)
+      // Se gira arrastrando un dedo (ver «Toques»).
+      const e = grupoPieza.userData.escala = tamanoReal ? 1 / ANCHO_M : escalaMini;      // tamaño verdadero o miniatura
+      const tam = grupoPieza.userData.tam || new THREE.Vector3(1, 1, 1);
+      grupoPieza.rotation.set(0, 0, 0);
+      // Centrada en la tarjeta (si es más alta que la tarjeta, apoyada en su borde inferior) y un poco hacia
+      // adelante, para que al girarla no atraviese la tarjeta
+      grupoPieza.position.set(0, -Math.min(tam.y * e, ALTO) / 2, Math.hypot(tam.x, tam.z) * e / 2 + 0.02);
+      grupoPieza.scale.setScalar(e);
       $('escala').textContent = tamanoReal ? 'Volver a la miniatura' : 'Tamaño real sobre la tarjeta';
     }
 
@@ -373,13 +380,13 @@
       estado = 'pieza';
       videoVisto = true;
       video.classList.remove('flotante');
-      if (!visible && !modoDemo) pista('Apunta a la tarjeta para ver la pieza sobre ella');
+      if (!visible && !modoDemo) pista('Apunta a la tarjeta para ubicar la pieza sobre ella');
       grupoVideo.visible = false;
       tAparicion = performance.now();
       if (!pieza) { $('mensaje').textContent = 'Cargando la pieza…'; return; }
       grupoPieza.visible = true;
       const puedeAR = !!mv.canActivateAR;
-      $('mensaje').textContent = puedeAR ? 'Deja la tarjeta en una mesa y rodéala · toca la pieza para verla a tamaño real'
+      $('mensaje').textContent = puedeAR ? 'Desliza un dedo para girarla · toca la pieza para verla a tamaño real'
                                          : 'Este es tu exhibidor · ábrelo en un celular para verlo en tu espacio';
       $('verReal').hidden = !puedeAR;
       $('escala').hidden = modoDemo;
@@ -410,7 +417,7 @@
         if (visible) return;
         if (estado === 'video' && !videoArranco) pista('Apunta a la tarjeta para seguir');
         else if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta para verlo junto a ella'); }
-        else if (estado === 'pieza') pista('Apunta a la tarjeta para ver la pieza sobre ella');
+        else if (estado === 'pieza') pista('La pieza se queda aquí: gírala con el dedo o vuelve a apuntar a la tarjeta');
       }, 700);
     }
 
@@ -449,6 +456,9 @@
           missTolerance: 12,                           // aguanta más cuadros dudosos antes de dar la tarjeta por perdida
         });
         ({ renderer, scene, camera } = mindar);
+        // MindAR dibuja a la resolución completa de la pantalla (×3 en muchos celulares) y eso le quita potencia
+        // al seguimiento, que usa la misma tarjeta gráfica: se ve entrecortado. Con ×1.5 casi no se nota la diferencia.
+        renderer.setPixelRatio(Math.min(devicePixelRatio, numero('nitidez', 1.5)));
         prepararLuz();
         const ancla = mindar.addAnchor(0);
         // El contenido no cuelga directo del ancla: MindAR lo desaparece en el instante en que duda. Va en un
@@ -546,6 +556,12 @@
       return q.set(v.x * s, v.y * s, v.z * s, Math.cos(a / 2));
     }
     let hayPose = false, tSalto = 0, tCuadro = 0, tMed = 0;
+    // Medidor de fluidez (se ve en «Calibrar»): cuadros dibujados y lecturas de la tarjeta por segundo
+    const medidor = { cuadros: 0, lecturas: 0 };
+    setInterval(() => {
+      if (!$('panel').hidden) $('fluidez').textContent = `Fluidez: ${medidor.cuadros} cuadros/s · ${medidor.lecturas} lecturas de la tarjeta/s · ${visible ? 'tarjeta a la vista' : 'tarjeta perdida'}`;
+      medidor.cuadros = medidor.lecturas = 0;
+    }, 1000);
     function cuadro() {
       const ahora = performance.now();
       const dt = Math.min(100, ahora - (tCuadro || ahora));
@@ -585,6 +601,7 @@
                 omega.lerp(aVector(qTmp, vTmp).divideScalar(dtm), aQ);
               }
               pMed.copy(pNueva); qMed.copy(qNueva); tMed = ahora;
+              medidor.lecturas++;
             } else if (ahora - tMed > 200) {
               // Sin lecturas nuevas: la velocidad vieja ya no vale
               const f = Math.exp(-dt / 80); vel.multiplyScalar(f); omega.multiplyScalar(f);
@@ -611,8 +628,11 @@
           soporte.matrixWorldNeedsUpdate = true;
           soporte.visible = true;
           tUltimaVista = ahora;
-        } else if (ahora - tUltimaVista > AGUANTE_MS) soporte.visible = false;
+        } else if (ahora - tUltimaVista > AGUANTE_MS && estado !== 'pieza') soporte.visible = false;
+        // Con la pieza en pantalla no se oculta nada al perder la tarjeta: se queda donde estaba (se puede seguir
+        // girando con el dedo) y vuelve a pegarse a la tarjeta cuando la cámara la encuentra otra vez.
       }
+      medidor.cuadros++;
       const k = suave((ahora - tAparicion) / 600);
       if (grupoVideo.visible) {
         // Presentación por etapas: cada panel entra en su segundo («entra»), contado desde que arrancó el video
@@ -645,21 +665,30 @@
       }
       if (grupoPieza.visible) {
         grupoPieza.scale.setScalar(Math.max(0.001, k) * grupoPieza.userData.escala);
-        if (modoDemo) giro.rotation.y = ahora / 1000 * 0.6;      // sin tarjeta real nadie puede rodearla: gira sola
+        if (modoDemo && !giroManual) giro.rotation.y += dt / 1000 * 0.6;      // en la demostración gira sola hasta que se toca
       }
       if (modoDemo) {
-        // Leve vaivén para que se note el volumen; con la pieza, la tarjeta se «acuesta» como sobre una mesa
-        const acostada = estado === 'pieza' ? -1.0 : Math.sin(ahora / 3100) * 0.06;
-        mundoDemo.rotation.x += (acostada - mundoDemo.rotation.x) * 0.08;
+        // Leve vaivén para que se note el volumen
+        const inclinada = estado === 'pieza' ? -0.12 : Math.sin(ahora / 3100) * 0.06;
+        mundoDemo.rotation.x += (inclinada - mundoDemo.rotation.x) * 0.08;
         mundoDemo.rotation.y = estado === 'pieza' ? 0 : Math.sin(ahora / 2200) * 0.22;
       }
       renderer.render(scene, camera);
     }
 
     // ── Toques ──────────────────────────────────────────────────────────────────────────────────
+    // Arrastrar un dedo gira la pieza sobre su eje (no depende del seguimiento); un toque corto la lleva al AR.
     const rayo = new THREE.Raycaster();
-    let toque0 = null;
-    escena.addEventListener('pointerdown', e => { toque0 = [e.clientX, e.clientY]; });
+    let toque0 = null, xArrastre = null, giroManual = false;
+    escena.addEventListener('pointerdown', e => { toque0 = [e.clientX, e.clientY]; xArrastre = e.clientX; });
+    escena.addEventListener('pointermove', e => {
+      if (xArrastre === null || estado !== 'pieza' || !grupoPieza.visible) return;
+      if (!giroManual && Math.abs(e.clientX - toque0[0]) < 8) return;
+      giroManual = true;
+      giro.rotation.y += (e.clientX - xArrastre) * 0.012;
+      xArrastre = e.clientX;
+    });
+    for (const fin of ['pointerup', 'pointercancel', 'pointerleave']) escena.addEventListener(fin, () => { xArrastre = null; });
     escena.addEventListener('pointerup', e => {
       if (!toque0 || Math.hypot(e.clientX - toque0[0], e.clientY - toque0[1]) > 12) return;
       if (estado !== 'pieza' || !grupoPieza.visible) return;

@@ -66,7 +66,7 @@
       return { data, width: ancho, height: alto, scale: ancho / img.width };
     }
 
-    function elegirPuntos(t, { max = 60,separacion = 7, contraste = 9, parecido = 0.9, busqueda = 10 } = {}) {
+    function elegirPuntos(t, { max = 40, separacion = 7, contraste = 9, parecido = 0.9, busqueda = 10 } = {}) {
       const { data: G, width: w, height: h } = t, n = w * h;
       // Sumas acumuladas para medir rápido cada trocito: brillo, brillo², y cambios horizontales / verticales
       const acum = f => { const s = new Float64Array((w + 1) * (h + 1));
