@@ -39,7 +39,7 @@ namespace FlujoAR
         static readonly string[] Titulos =
         {
             "Preparar en Rhino", "Exportar .glb", "Optimizar o animar", "Revisar",
-            "Campañas", "Publicar", "Generar QR",
+            "Campañas", "Publicar", "Generar QR", "Tarjetas AR",
         };
 
         readonly string raiz, carpetaModelos, rutaColecciones, carpetaQrs;
@@ -150,6 +150,7 @@ namespace FlujoAR
             lblEstadoAnimVisible = null;
             // El animador necesita más espacio: la ventana crece solo mientras se usa
             AjustarTamano(i == 2 && modoAnimado);
+            if (i == 7) CrecerAlto(S(760));         // las tarjetas y su editor caben sin desplazar
 
             contenido.SuspendLayout();
             foreach (var c in contenido.Controls.Cast<Control>().ToList()) c.Dispose();
@@ -166,6 +167,7 @@ namespace FlujoAR
                 case 4: PasoCampanas(col); break;
                 case 5: PasoPublicar(col); break;
                 case 6: PasoQr(col); break;
+                case 7: PasoTarjetas(col); break;      // Tarjetas.cs
             }
             // El Padding del panel no se aplica a hijos sin Dock: el margen va en la posición
             col.Location = new Point(S(34), S(26));

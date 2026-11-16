@@ -184,7 +184,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116g';
+    const VERSION = '20261116h';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -226,6 +226,16 @@
       return t;
     })();
     const escena = $('escena'), video = $('video'), mv = $('mv');
+
+    // ── Presentación de cada tarjeta (se elige en el paso 8 de Flujo AR) ────────────────────────
+    // tarjetas.json puede traer, por tarjeta:
+    //   "presentacion": { "tipo": "video", "archivo": "tarjetas/1/video.mp4", "version": "…" }
+    //   "presentacion": { "tipo": "pdf", "paginas": ["tarjetas/1/pagina-01.jpg", …], "segundos": 5, "version": "…" }
+    // Sin ella se usa video.mp4 de esta carpeta. El PDF llega ya convertido en imágenes (una por página) y se
+    // pasa solo, página por página, en el mismo lugar del video; al terminar aparece la pieza.
+    let presentacion = null, tarjetaLeida = false;
+    tarjetaLista.then(t => { presentacion = t.presentacion || null; tarjetaLeida = true; });
+    const diapos = { activo: false, texturas: [], segundos: 5, t: 0, i: -1, aspecto: 16 / 9 };
 
     let estado = 'inicio';        // inicio → buscando → video → pieza   (ar = fuera, en el AR del celular)
     let modoDemo = false, mindar = null, renderer, scene, camera;
@@ -286,7 +296,7 @@
     let pieza = null, escalaMini = 1, piezaInfo = null;
 
     function colocarVideo() {
-      PANELES[0].aspecto = (video.videoWidth || 16) / (video.videoHeight || 9);
+      PANELES[0].aspecto = diapos.activo ? diapos.aspecto : (video.videoWidth || 16) / (video.videoHeight || 9);
       limites = new THREE.Box3(new THREE.Vector3(-0.5, -ALTO / 2, 0), new THREE.Vector3(0.5, ALTO / 2, 0));
       for (const def of PANELES) {
         const w = def.ancho, h = w / def.aspecto, l = def.x, t = typeof def.y === 'function' ? def.y() : def.y;
@@ -365,11 +375,38 @@
       grupoVideo.visible = true;
       tAparicion = performance.now();
       video.currentTime = 0;
+      diapos.t = 0;
       $('verReal').hidden = $('escala').hidden = $('repetir').hidden = true;
       $('mensaje').textContent = '';
     }
 
+    // Deja lista la presentación de esta tarjeta: su video, sus páginas de PDF o el video general
+    function prepararPresentacion() {
+      const p = presentacion;
+      const direccion = rel => { const u = new URL(encodeURI(rel), RAIZ); u.searchParams.set('v', p.version || VERSION); return u.href; };
+      if (p && p.tipo === 'pdf' && p.paginas && p.paginas.length) {
+        diapos.activo = true;
+        diapos.segundos = Math.max(1, parseFloat(p.segundos) || 5);
+        diapos.texturas = p.paginas.map((rel, i) => {
+          const t = cargadorImg.load(direccion(rel), t => {
+            if (i === 0) { diapos.aspecto = t.image.width / t.image.height; colocarVideo(); }
+          });
+          t.colorSpace = THREE.SRGBColorSpace;
+          return t;
+        });
+        const v = PANELES[0];
+        if (params_('opacidad') === null) v.opacidad = 0.95;       // un documento se lee mal si es transparente
+        v.tex = diapos.texturas[0]; v.malla.material.map = v.tex; diapos.i = 0;
+        $('repetir').textContent = 'Repetir presentación';
+        document.querySelector('.guia .fantasma span').textContent = 'PRESENTACIÓN';
+        return;
+      }
+      video.src = p && p.tipo === 'video' && p.archivo ? direccion(p.archivo) : 'video.mp4?v=' + VERSION;
+      video.play().then(() => { if (estado !== 'video' || !videoArranco) video.pause(); }).catch(() => {});
+    }
+
     function reproducir() {
+      if (diapos.activo) return;          // las páginas avanzan solas (ver «Cada cuadro»)
       video.play().catch(() => {
         // El celular no dejó sonar el video sin un toque: se reproduce en silencio y se ofrece activar el sonido
         video.muted = true;
@@ -418,6 +455,7 @@
       relojPerdida = setTimeout(() => {
         if (visible) return;
         if (estado === 'video' && !videoArranco) pista('Apunta a la tarjeta y acércala un poco');
+        else if (estado === 'video' && diapos.activo) pista('Apunta a la tarjeta para seguir viendo la presentación');
         else if (estado === 'video') { video.classList.add('flotante'); pista('Apunta a la tarjeta y acércala un poco para verlo junto a ella'); }
         else if (estado === 'pieza') pista('La pieza se queda aquí: gírala con el dedo o vuelve a apuntar a la tarjeta');
       }, aguante());
@@ -946,6 +984,15 @@
         marcoVideo.scale.copy(v.malla.scale); marcoVideo.position.copy(v.malla.position); marcoVideo.position.z += 0.001;
         marcoVideo.visible = v.malla.visible;
         barra.visible = tPres > v.entra + 1.1;
+        if (diapos.activo) {
+          // PDF: cada página se queda «segundos» y pasa a la siguiente; el reloj solo corre con la tarjeta a la vista
+          if (estado === 'video' && videoArranco && (visible || modoDemo)) diapos.t += dt / 1000;
+          const total = diapos.texturas.length * diapos.segundos;
+          const i = Math.min(diapos.texturas.length - 1, Math.floor(diapos.t / diapos.segundos));
+          if (i !== diapos.i) { diapos.i = i; v.tex = diapos.texturas[i]; v.malla.material.map = v.tex; }
+          barra.scale.x = Math.max(0.001, barra.userData.ancho * Math.min(1, diapos.t / total));
+          if (estado === 'video' && diapos.t >= total) mostrarPieza();
+        } else
         if (video.duration) barra.scale.x = Math.max(0.001, barra.userData.ancho * video.currentTime / video.duration);
       }
       if (grupoPieza.visible) {
@@ -992,8 +1039,8 @@
       $('inicio').hidden = true;
       pedirGiroscopio();
       // Dentro del toque: «despierta» el video para que después pueda sonar solo cuando aparezca la tarjeta
-      video.src = 'video.mp4?v=' + VERSION;
-      video.play().then(() => { if (estado !== 'video' || !videoArranco) video.pause(); }).catch(() => {});
+      // (si tarjetas.json aún no llegó, se prepara apenas llegue; lo normal es que ya esté)
+      if (tarjetaLeida) prepararPresentacion(); else tarjetaLista.then(prepararPresentacion);
       cargarPieza().then(() => { if (estado === 'pieza') mostrarPieza(); })
                    .catch(e => { console.error(e); avisar('No se pudo cargar la pieza 3D.'); });
       if (demo) { iniciarDemo(); return; }
@@ -1038,7 +1085,7 @@
     $('sonido').onclick = () => { video.muted = false; $('sonido').hidden = true; };
 
     // Para revisar desde el computador
-    window.__tarjeta = { get estado() { return estado; }, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv, alPerder, alEncontrar,
+    window.__tarjeta = { get estado() { return estado; }, diapos, video, contenido, grupoPieza, grupoVideo, mostrarPieza, mv, alPerder, alEncontrar,
       // Para simular el seguimiento sin cámara: un «ancla» falsa y eventos de giroscopio inventados
       prueba: { THREE, soporte, giroscopio, alMover, cuadro, ultimaPos, mejorarBusqueda, ayuda, ponerMotor(m) { mindar = m; }, ponerEstado(e) { estado = e; }, ponerAncla(g) { anclaGrupo = g; modoDemo = false; soporte.matrixAutoUpdate = false; }, reiniciar() { hayPose = false; giroscopio.hist.length = 0; giroscopio.q.identity(); giroscopio.t = 0; reiniciarGiroscopio(); } } };
   </script>

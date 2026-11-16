@@ -23,6 +23,10 @@ namespace FlujoAR
             { ".png", "image/png" },
             { ".jpg", "image/jpeg" },
             { ".svg", "image/svg+xml" },
+            { ".jpeg", "image/jpeg" },
+            { ".webp", "image/webp" },
+            { ".mp4", "video/mp4" },
+            { ".pdf", "application/pdf" },
         };
 
         HttpListener oyente;
@@ -122,8 +126,27 @@ namespace FlujoAR
                 ctx.Response.ContentType = Tipos.TryGetValue(Path.GetExtension(ruta), out tipo) ? tipo : "application/octet-stream";
                 ctx.Response.AddHeader("Cache-Control", "no-store");   // siempre la versión más reciente
                 byte[] contenido = File.ReadAllBytes(ruta);
-                ctx.Response.ContentLength64 = contenido.Length;
-                if (ctx.Request.HttpMethod != "HEAD") ctx.Response.OutputStream.Write(contenido, 0, contenido.Length);
+                // Los videos se piden por tramos («Range: bytes=a-b»): sin esto el navegador no puede devolverlos al inicio
+                int desde = 0, cuantos = contenido.Length;
+                ctx.Response.AddHeader("Accept-Ranges", "bytes");
+                var tramo = System.Text.RegularExpressions.Regex.Match(ctx.Request.Headers["Range"] ?? "", @"^bytes=(\d+)-(\d*)$");
+                if (tramo.Success && contenido.Length > 0)
+                {
+                    long a = long.Parse(tramo.Groups[1].Value);
+                    long b = tramo.Groups[2].Value == "" ? contenido.Length - 1 : Math.Min(long.Parse(tramo.Groups[2].Value), contenido.Length - 1);
+                    if (a > b)
+                    {
+                        ctx.Response.StatusCode = 416;
+                        ctx.Response.AddHeader("Content-Range", "bytes */" + contenido.Length);
+                        return;
+                    }
+                    desde = (int)a;
+                    cuantos = (int)(b - a + 1);
+                    ctx.Response.StatusCode = 206;
+                    ctx.Response.AddHeader("Content-Range", "bytes " + a + "-" + b + "/" + contenido.Length);
+                }
+                ctx.Response.ContentLength64 = cuantos;
+                if (ctx.Request.HttpMethod != "HEAD") ctx.Response.OutputStream.Write(contenido, desde, cuantos);
             }
             catch { ctx.Response.StatusCode = 500; }
             finally

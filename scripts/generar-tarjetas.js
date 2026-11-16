@@ -7,7 +7,7 @@ const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..');
 const MARCA = '<!-- tarjeta-ar: página generada por scripts/generar-tarjetas.js -->';
-const RESERVADAS = new Set(['t', 'models', 'docs', 'scripts', 'herramientas', 'pruebas', 'qrs', 'node_modules', '.git', '.claude']);
+const RESERVADAS = new Set(['t', 'tarjetas', 'models', 'docs', 'scripts', 'herramientas', 'pruebas', 'qrs', 'node_modules', '.git', '.claude']);
 const rutaManifiesto = path.join(RAIZ, '_tarjetas-paginas.json');
 const leer = (r, defecto) => { try { return JSON.parse(fs.readFileSync(r, 'utf8').replace(/^﻿/, '')); } catch { return defecto; } };
 
@@ -32,6 +32,13 @@ for (const n of Object.keys(tarjetas).filter(k => /^\d+$/.test(k))) {
   const col = colecciones[t.coleccion];
   if (!col) error(`la campaña "${t.coleccion}" no existe en colecciones.json`);
   else if (t.pieza && !col.modelos.some(m => m.id === t.pieza)) error(`la campaña "${t.coleccion}" no tiene la pieza "${t.pieza}"`);
+  // Presentación propia de la tarjeta (video o páginas de PDF, en tarjetas/<n>/): que los archivos existan
+  const pres = t.presentacion;
+  if (pres) {
+    const archivos = pres.tipo === 'pdf' ? (pres.paginas || []) : pres.tipo === 'video' ? [pres.archivo] : [];
+    if (!archivos.length || archivos.some(a => !a)) error('la presentación está incompleta: vuelve a cargarla en el paso 8 de Flujo AR');
+    for (const a of archivos.filter(Boolean)) if (!fs.existsSync(path.join(RAIZ, a))) error(`falta el archivo de la presentación: ${a}`);
+  }
   if (!t.direccion) { console.log('  (sin dirección propia: se verá /pruebas/tarjeta/)'); continue; }
 
   const partes = String(t.direccion).split('/').map(p => p.trim()).filter(Boolean);

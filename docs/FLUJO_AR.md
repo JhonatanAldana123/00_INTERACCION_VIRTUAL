@@ -2,7 +2,7 @@
 
 **Doble clic en `FlujoAR.bat`** (en la carpeta del proyecto) y se abre una ventana que te guía de Rhino al QR. No hay que instalar nada.
 
-A la izquierda están los 7 pasos. Puedes seguirlos en orden con **Siguiente →** o saltar directo a cualquiera, por ejemplo al paso 7 si solo necesitas un QR.
+A la izquierda están los 8 pasos. Puedes seguirlos en orden con **Siguiente →** o saltar directo a cualquiera, por ejemplo al paso 7 si solo necesitas un QR.
 
 **La idea central:** cada **campaña** es una carpeta dentro de `models\`, y cada **pieza** (exhibidor, bandeja…) es una subcarpeta. Una campaña con varias piezas tiene un QR de colección; con una sola, un QR de esa pieza. Detalle en [CAMPANAS.md](CAMPANAS.md).
 
@@ -15,6 +15,7 @@ A la izquierda están los 7 pasos. Puedes seguirlos en orden con **Siguiente →
 | **5. Campañas** | Lo que se detectó en las carpetas: piezas de cada campaña, su peso y su enlace. Aquí cambias el **orden** de las piezas (↑ Subir / ↓ Bajar). |
 | **6. Publicar** | Instrucciones de GitHub Desktop, botón para abrirlo y **Verificar publicación**, que revisa pieza por pieza si ya están en línea. |
 | **7. Generar QR** | **Catálogo** con una tarjeta por campaña (su QR abre todas sus piezas). Cada tarjeta tiene **PNG** (impresión) y **SVG** (PDF, Illustrator) y marca **✓** si ya está guardada. **Guardar todos** los guarda de una vez en la carpeta `qrs\`. |
+| **8. Tarjetas AR** | Las tarjetas impresas (cada una con su QR fijo). Eliges una tarjeta y decides qué **campaña y pieza** abre y qué **presentación** se reproduce sola antes de la pieza: un **video** o un **PDF**. Detalle abajo. |
 
 ---
 
@@ -29,6 +30,29 @@ A la izquierda están los 7 pasos. Puedes seguirlos en orden con **Siguiente →
 6. **Paso 7:** en el catálogo, tarjeta **Alpina** → PNG o SVG (o **Guardar todos**) → escanéalo con Android y con iPhone.
 
 > **¿Agregas una pieza a una campaña que ya tiene QR impreso?** No necesitas un QR nuevo: basta con los pasos 3 y 6. El mismo QR ya muestra la pieza nueva.
+
+---
+
+## Tarjetas AR (paso 8)
+
+La tarjeta impresa lleva un QR que nunca cambia (`innerciaar.com/t/1` … `t/4`). Al escanearlo se abre la pantalla
+azul con **Comenzar**, la cámara reconoce la tarjeta, se reproduce la presentación y al final aparece la pieza 3D.
+En el paso 8 decides qué muestra cada tarjeta, sin reimprimir:
+
+1. **Clic en la tarjeta** (1 a 4). Debajo de cada una ves qué abre hoy y qué presentación tiene.
+2. **Campaña** y **Pieza que abre**: las mismas campañas del paso 7. Al elegirlas se proponen solos el
+   **nombre que ve el cliente** y la **dirección** que queda en la barra del navegador; puedes cambiarlos
+   (la dirección solo lleva letras sin tilde, números, `-` y `_`).
+3. **Presentación**:
+   - **Cargar video…** → un `.mp4` (lo ideal: menos de 15 MB; GitHub no recibe más de 100 MB).
+   - **Cargar PDF…** → cada página se convierte en una imagen y pasan solas, una tras otra, en el lugar del video.
+     **Segundos por página** decide cuánto dura cada una.
+   - **Quitar** → vuelve al video general de Innercia (el de las tarjetas sin presentación propia).
+4. **Guardar tarjeta**. Con **Guardar y probar en el navegador** la ves enseguida en tu computador, sin cámara
+   (con la tarjeta dibujada).
+5. **Paso 6:** Commit to main → Push origin. Después, el QR impreso ya muestra lo nuevo: pruébalo en el celular.
+
+Los archivos de cada tarjeta quedan en `tarjetas\<número>\` y la lista en `tarjetas.json`.
 
 ---
 
@@ -140,7 +164,12 @@ Ese objeto no tiene material asignado en Rhino: el exportador le pone uno negro 
 |---|---|
 | `FlujoAR.bat` | Lanzador: abre `herramientas\FlujoAR.ps1` sin ventana de consola |
 | `herramientas\FlujoAR.ps1` | Compila en memoria el código C# (Add-Type) y abre la ventana |
-| `herramientas\FlujoAR\Ventana.cs` | La ventana y los 7 pasos |
+| `herramientas\FlujoAR\Ventana.cs` | La ventana y los pasos 1 a 7 |
+| `herramientas\FlujoAR\Tarjetas.cs` | El paso 8 (Tarjetas AR): lee y escribe `tarjetas.json`, copia el video o convierte el PDF a `tarjetas\<n>\` |
+| `scripts\pdf-a-imagenes.ps1` | Convierte cada página de un PDF en `pagina-01.jpg`… con el lector de PDF de Windows |
+| `scripts\generar-tarjetas.js` | Valida `tarjetas.json` y crea la página de cada dirección visible (lo ejecuta el paso 8 al guardar; también `ActualizarTarjetas.bat`) |
+| `pruebas\tarjeta\index.html` | La experiencia de la tarjeta (cámara, presentación, pieza). Lee `tarjetas.json` |
+| `t\1` … `t\4` | Direcciones fijas de los QR impresos: no renombrar ni borrar |
 | `herramientas\FlujoAR\Qr.cs` | Generador de QR propio (ISO/IEC 18004, corrección M), sin dependencias |
 | `herramientas\FlujoAR\Colecciones.cs` | Lee `colecciones.json` |
 | `herramientas\FlujoAR\Servidor.cs` | Servidor local para la vista previa del paso 4 |
