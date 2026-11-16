@@ -214,6 +214,8 @@
 
   <!-- Panel de calibración (solo en esta página de prueba): se mueve mirando la tarjeta y se anotan los números -->
   <div class="panel" id="panel" hidden>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cFijo" style="width:auto"> Presentación fija en la pantalla (no sigue a la tarjeta)</label>
+    <small>Con la casilla marcada, lo de abajo no se usa.</small>
     <label>Inclinación que copia de la tarjeta <b id="vIncl"></b><input type="range" id="rIncl" min="0" max="100" step="5"></label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cEncuadre" style="width:auto"> Que no crezca más que la pantalla</label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cCentrar" style="width:auto"> Correrla para que quede siempre entera</label>
@@ -248,7 +250,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116m';
+    const VERSION = '20261116n';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -465,15 +467,19 @@
       encuadrarDemo();
     }
     video.addEventListener('loadedmetadata', colocarVideo);
-    addEventListener('resize', colocarVideo);       // otra forma de pantalla: se reubica todo
+    addEventListener('resize', () => { enc.r = null; colocarVideo(); });       // otra forma de pantalla: se reubica todo
 
     // Dónde pide la guía poner la tarjeta: el «marco» de la disposición se ajusta a la pantalla (dejando libres las
     // franjas de los botones) y de ahí sale el lugar de la tarjeta. Con la tarjeta ahí, todo cabe.
-    function colocarGuia() {
+    // s = píxeles por ancho de tarjeta; (cx, cy) = centro de la tarjeta en la pantalla
+    function lugarTarjeta() {
       const m = disp.marco, W = innerWidth, H = innerHeight, acostada = W > H;
       const sup = acostada ? 6 : 44, inf = acostada ? 8 : 58;
       const s = Math.min(W / (m.r - m.l), (H - sup - inf) / (m.t - m.b));
-      const cx = W / 2 - (m.l + m.r) / 2 * s, cy = sup + (H - sup - inf) / 2 + (m.t + m.b) / 2 * s;
+      return { s, cx: W / 2 - (m.l + m.r) / 2 * s, cy: sup + (H - sup - inf) / 2 + (m.t + m.b) / 2 * s };
+    }
+    function colocarGuia() {
+      const { s, cx, cy } = lugarTarjeta(), W = innerWidth, H = innerHeight, acostada = W > H;
       const marco = $('marcoGuia').style, info = $('guiaInfo').style;
       marco.left = cx - s / 2 + 'px'; marco.top = cy - ALTO * s / 2 + 'px'; marco.width = s + 'px'; marco.height = ALTO * s + 'px';
       if (acostada) { info.left = cx + s / 2 + 12 + 'px'; info.right = ''; info.width = ''; info.top = cy - 24 + 'px'; info.bottom = ''; }
@@ -615,6 +621,7 @@
     function mostrarVideo() {
       videoArranco = videoTermino = botonReal = false;
       enc.listo = false;                  // el bloque aparece directo en su sitio
+      enc.z = 0; enc.r = null;            // la presentación fija se vuelve a acomodar a la pantalla
       video.pause();
       estado = 'video';
       grupoPieza.visible = false;
@@ -684,6 +691,7 @@
     // en la pantalla; al reencontrar la tarjeta regresa a su lugar junto a ella.
     function alPerder() {
       visible = false;
+      if (cal.fijo) return;               // presentación fija: sigue igual aunque la tarjeta salga de cuadro
       if (estado !== 'video' && estado !== 'pieza') return;
       clearTimeout(relojPerdida);
       relojPerdida = setTimeout(() => {
@@ -947,6 +955,7 @@
       inclinacion: numero('inclinacion', 100),           // % de la inclinación de la tarjeta que copia la presentación (0 = siempre de frente)
       encuadre: params_('encuadre') !== '0',             // tope de tamaño: al acercar la tarjeta, la presentación no pasa de llenar la pantalla
       centrar: params_('centrar') === '1',               // además se corre para quedar siempre entera en pantalla (apagado: se sentía raro)
+      fijo: params_('fijo') !== '0',                     // la presentación NO sigue a la tarjeta: queda quieta en la pantalla (ver fijar())
     };
 
     // ── Encuadre de la presentación ─────────────────────────────────────────────────────────────
@@ -960,9 +969,35 @@
     //   3. Lugar: si la tarjeta se va hacia un borde, el bloque (logo, video o PDF, descripción y pieza) se corre lo
     //      justo para seguir entero en pantalla. La línea de contacto sí se queda pegada a la tarjeta.
     const ENCUADRE_MIN = 0.42;
-    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
+    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, z: 0, p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
                   qv: new THREE.Quaternion(), v: new THREE.Vector3(), m: new THREE.Matrix4(), inv: new THREE.Matrix4() };
+    // PRESENTACIÓN FIJA (pedido del usuario, 16/11/2026, tras tres pruebas con saltos y temblor al seguir la tarjeta):
+    // la tarjeta solo DISPARA la presentación. Al reconocerla, todo aparece con sus efectos de entrada pero quieto
+    // en la pantalla, acomodado para llenarla, como si la tarjeta estuviera justo en el recuadro de la guía. No se
+    // mueve con la tarjeta ni desaparece si la tarjeta sale de cuadro. `?fijo=0` (o la casilla de «Calibrar»)
+    // vuelve a pegarla a la tarjeta.
+    function fijar() {
+      if (!scene || !camera) return;
+      if (contenido.parent !== scene) scene.add(contenido);
+      if (!enc.r || enc.n++ % 30 === 0) enc.r = renderer.domElement.getBoundingClientRect();
+      const r = enc.r, { s, cx, cy } = lugarTarjeta();
+      // A la profundidad a la que se vio la tarjeta (cualquiera sirve: solo cambia el tamaño, que se compensa)
+      if (!enc.z) { soporte.matrix.decompose(enc.p, enc.q, enc.s); enc.z = enc.p.z < -1 ? enc.p.z : -1000; }
+      enc.v.set(0, 0, enc.z).applyMatrix4(camera.projectionMatrix);
+      const x0 = r.left + (enc.v.x + 1) / 2 * r.width, y0 = r.top + (1 - enc.v.y) / 2 * r.height;
+      enc.v.set(1, 0, enc.z).applyMatrix4(camera.projectionMatrix);
+      const porUnidad = Math.abs(r.left + (enc.v.x + 1) / 2 * r.width - x0);      // píxeles por unidad a esa profundidad
+      if (!(porUnidad > 0) || !isFinite(porUnidad)) return;
+      const e = s / porUnidad;
+      contenido.matrixAutoUpdate = false;
+      contenido.matrix.compose(enc.p.set((cx - x0) / porUnidad, -(cy - y0) / porUnidad, enc.z), enc.qv.identity(), enc.s.set(e, e, e));
+      contenido.matrixWorldNeedsUpdate = true;
+      bloque.position.set(0, 0, 0); bloque.scale.setScalar(1);
+    }
+
     function encuadrar(dt) {
+      if (!modoDemo && cal.fijo) { fijar(); return; }
+      if (!modoDemo && anclaGrupo && contenido.parent !== soporte) soporte.add(contenido);
       if (modoDemo || !soporte.visible || !anclaGrupo) {
         // Sin cámara todo va tal cual sobre la tarjeta dibujada (la vista ya encuadra el marco completo)
         if (modoDemo && !contenido.matrixAutoUpdate) { contenido.matrixAutoUpdate = true; contenido.position.set(0, 0, 0); contenido.quaternion.identity(); contenido.scale.set(1, 1, 1); }
@@ -1255,7 +1290,7 @@
       if (grupoVideo.visible) {
         // Presentación por etapas: cada panel entra en su segundo («entra»), contado desde que arrancó el video
         const tPres = (ahora - tAparicion) / 1000;
-        if (!videoArranco && estado === 'video' && tPres >= PANELES[0].entra) { videoArranco = true; if (visible) reproducir(); }
+        if (!videoArranco && estado === 'video' && tPres >= PANELES[0].entra) { videoArranco = true; if (visible || cal.fijo) reproducir(); }
         for (const def of PANELES) {
           const d = suave((tPres - def.entra) / 1.1), m = def.malla, c = def.caja, op = def.opacidad ?? 1;
           m.visible = d > 0;
@@ -1282,7 +1317,7 @@
         if (diapos.activo) {
           // PDF: cada página se queda «segundos» y pasa a la siguiente; al llegar a la última vuelve a empezar.
           // El reloj solo corre con la tarjeta a la vista.
-          if (estado === 'video' && videoArranco && (visible || modoDemo)) diapos.t += dt / 1000;
+          if (estado === 'video' && videoArranco && (visible || modoDemo || cal.fijo)) diapos.t += dt / 1000;
           const total = diapos.texturas.length * diapos.segundos;
           if (diapos.t >= total) diapos.t -= total;
           const i = Math.min(diapos.texturas.length - 1, Math.floor(diapos.t / diapos.segundos));
@@ -1369,7 +1404,7 @@
       acostado = ahora;
       colocarVideo();
       if (estado === 'video') {
-        if (modoDemo) mostrarVideo();
+        if (modoDemo || cal.fijo) mostrarVideo();       // fija: vuelve a empezar de una vez, sin buscar otra vez la tarjeta
         else {
           video.pause();
           video.classList.remove('flotante');
@@ -1400,6 +1435,8 @@
     $('rIncl').oninput = () => { cal.inclinacion = parseFloat($('rIncl').value) || 0; $('vIncl').textContent = cal.inclinacion + ' %'; };
     $('cEncuadre').checked = cal.encuadre;
     $('cEncuadre').onchange = () => { cal.encuadre = $('cEncuadre').checked; };
+    $('cFijo').checked = cal.fijo;
+    $('cFijo').onchange = () => { cal.fijo = $('cFijo').checked; };
     $('cCentrar').checked = cal.centrar;
     $('cCentrar').onchange = () => { cal.centrar = $('cCentrar').checked; };
     $('calibrar').onclick = () => { $('panel').hidden = !$('panel').hidden; };

@@ -66,10 +66,15 @@ try {
     $net = [System.IO.WindowsRuntimeStreamExtensions]::AsStream($flujo)
     $imagen = [System.Drawing.Image]::FromStream($net)
     # Fondo blanco (el JPG no tiene transparencia)
-    $lienzo = New-Object System.Drawing.Bitmap $imagen.Width, $imagen.Height, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    # Windows multiplica el tamaño pedido por la escala de la pantalla (en una pantalla al 250 % salían páginas de
+    # 4000 px, que en el celular pesan 36 MB cada una y traban la presentación): aquí se lleva al tamaño exacto.
+    $factor = [Math]::Min(1.0, $Lado / [Math]::Max($imagen.Width, $imagen.Height))
+    $ancho = [int][Math]::Round($imagen.Width * $factor); $alto = [int][Math]::Round($imagen.Height * $factor)
+    $lienzo = New-Object System.Drawing.Bitmap $ancho, $alto, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
     $g = [System.Drawing.Graphics]::FromImage($lienzo)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.Clear([System.Drawing.Color]::White)
-    $g.DrawImage($imagen, 0, 0, $imagen.Width, $imagen.Height)
+    $g.DrawImage($imagen, 0, 0, $ancho, $alto)
     $g.Dispose()
     $lienzo.Save((Join-Path $Destino ('pagina-{0:00}.jpg' -f ($i + 1))), $jpg, $ajustes)
     $lienzo.Dispose(); $imagen.Dispose(); $net.Dispose(); $flujo.Dispose(); $pagina.Dispose()
