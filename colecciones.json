@@ -83,5 +83,18 @@
         "version": "1e96ff2066"
       }
     ]
+  },
+  "showroom": {
+    "titulo": "SHOWROOM",
+    "carpeta": "SHOWROOM",
+    "exposicion": 0.8,
+    "modelos": [
+      {
+        "id": "001-isla-axe",
+        "nombre": "001_ISLA_AXE",
+        "archivo": "models/SHOWROOM/001_ISLA_AXE/001_ISLA_AXE.glb",
+        "version": "0b1de18954"
+      }
+    ]
   }
 }
