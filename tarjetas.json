@@ -1,9 +1,10 @@
 {
   "_nota": "Qué abre cada tarjeta impresa. El QR de la tarjeta 1 siempre dice innerciaar.com/t/1; aquí se decide la pieza (coleccion y pieza, como en colecciones.json), el nombre que ve el cliente, la dirección que queda en la barra del navegador y la presentación (video o PDF). Se edita desde el paso «Tarjetas AR» de Flujo AR (o a mano, y luego doble clic en ActualizarTarjetas.bat). Después se publica. No hay que reimprimir.",
-  "1": { "coleccion": "showroom", "pieza": "001-isla-axe-nativa", "nombre": "SHOWROOM · ISLA AXE NATIVA", "direccion": "showroom/isla-axe-nativa",
+  "1": { "coleccion": "showroom", "pieza": "01-isla-axe", "nombre": "SHOWROOM · ISLA AXE", "direccion": "showroom/isla-axe",
          "descripcion": "esto solamente es una prueba de como se ve el cuadro de descripcion pero al final, pueden ir estas meddias de la pieza:\u000aalto 120 cm \u000aancho 140 cm \u000aprof: 100cm",
          "presentacion": { "tipo": "video", "archivo": "tarjetas/1/video.mp4", "version": "20261116184157", "origen": "CAPAÑA UNILEVER_V1_ES_animado.mp4" } },
-  "2": { "coleccion": "alpina", "pieza": "01-exhibidor-yogo", "nombre": "Alpina · Exhibidor Yogo", "direccion": "alpina/Exhibidor",
+  "2": { "coleccion": "showroom", "pieza": "002-exh-rexona", "nombre": "SHOWROOM · EXH REXONA", "direccion": "showroom/exh-rexona",
+         "descripcion": "asdsdsadsa",
          "presentacion": { "tipo": "video", "archivo": "tarjetas/2/video.mp4", "version": "20261116195034", "origen": "CAPAÑA UNILEVER_V2_ES_animado.mp4" } },
   "3": { "coleccion": "oliza", "pieza": "shipper", "nombre": "Oliza · Shipper", "direccion": "oliza/Shipper-AR" },
   "4": { "coleccion": "oliza", "pieza": "minishipper-mixto", "nombre": "Oliza · Minishipper Mixto", "direccion": "oliza/Minishipper" }
