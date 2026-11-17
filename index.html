@@ -138,6 +138,14 @@
       gap: 0;
     }
 
+    /* Portada (página principal): logo de Innercia arriba, triángulos en dos esquinas y la flecha abajo a la izquierda */
+    .screen > * { position: relative; z-index: 1; }
+    .screen .tri-sup, .screen .tri-inf, .screen .flecha-ini { position: absolute; z-index: 0; pointer-events: none; height: auto; }
+    .screen .tri-sup { left: 0; top: 0; width: min(11vw, 7.5vh); }
+    .screen .tri-inf { right: 0; bottom: 0; width: min(11vw, 7.5vh); }
+    .screen .flecha-ini { left: 0; bottom: 0; width: min(27vw, 40vh); }
+    .screen .logo-ini { width: min(76vw, 720px, 70vh); height: auto; margin-bottom: clamp(26px, 5vh, 52px); }
+
     .screen-icon {
       width: 64px;
       height: 64px;
@@ -352,6 +360,14 @@
 
   <!-- ── PANTALLA DE BIENVENIDA ── -->
   <div class="screen" id="welcome" hidden>
+    <svg class="tri-sup" viewBox="0 0 100 290" aria-hidden="true">
+      <polygon points="0,0 100,0 0,72" fill="#0091B5"/><polygon points="0,78 100,150 0,228" fill="#93C01F"/><polygon points="100,150 100,290 0,228" fill="#0091B5"/>
+    </svg>
+    <svg class="tri-inf" viewBox="0 0 100 290" aria-hidden="true">
+      <polygon points="0,0 100,0 0,72" fill="#0091B5"/><polygon points="0,78 100,150 0,228" fill="#93C01F"/><polygon points="100,150 100,290 0,228" fill="#0091B5"/>
+    </svg>
+    <img class="flecha-ini" src="pruebas/tarjeta/portada-flecha.png?v=2" alt="">
+    <img class="logo-ini" src="pruebas/vr/logo.png" alt="innercia · diseño bien pensado">
     <svg class="screen-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5">
       <polygon points="32,4 60,20 60,44 32,60 4,44 4,20" stroke-opacity="0.5"/>
       <polygon points="32,16 48,25 48,43 32,52 16,43 16,25"/>
@@ -376,6 +392,7 @@
 
 
   <script src="guia-ar.js"></script>
+  <script src="acceso-vr.js"></script>
   <script>
     // ── Parámetros URL ──────────────────────────────────────
     // Dirección limpia (la genera scripts/generar-colecciones.js):  /campana-alpina/   y   /campana-alpina/bandeja01/
@@ -577,8 +594,15 @@
         mostrarModelo(0);
       } else {
         ocultarLoading();
-        document.getElementById('vrLink').hidden = false;   // la entrada al entorno VR solo en la página de inicio
+        // La entrada al entorno VR solo en la página de inicio, y con contraseña (acceso-vr.js)
+        const vrLink = document.getElementById('vrLink');
+        vrLink.hidden = false;
         welcome.hidden = false;
+        if (window.accesoVR) {
+          const irVR = () => { location.href = vrLink.href; };
+          vrLink.addEventListener('click', e => { e.preventDefault(); accesoVR.pedir(irVR); });
+          if (params.get('vr') === '1') accesoVR.pedir(irVR);     // llegó desde la página VR sin contraseña
+        }
       }
     }
 

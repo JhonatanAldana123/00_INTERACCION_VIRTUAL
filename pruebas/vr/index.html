@@ -6,6 +6,9 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#03040A">
   <title>Prueba VR · Exhibidor Sello Rojo</title>
+  <!-- Contraseña: si este aparato no la ha puesto, vuelve a la página principal, que la pide -->
+  <script src="../../acceso-vr.js"></script>
+  <script>if (window.accesoVR) accesoVR.proteger('../../');</script>
   <!-- Página de PRUEBA para Oculus Go / Quest (WebXR). No la usa ningún QR.
        three.js r147 en versión clásica (sin módulos) para que funcione en navegadores viejos. -->
   <style>
@@ -36,6 +39,7 @@
   <script>
   (function () {
     'use strict';
+    if (window.accesoVR && !accesoVR.recordada()) return;     // sin contraseña no carga nada (ya se está yendo al inicio)
     var logEl = document.getElementById('log');
     var estadoEl = document.getElementById('estado');
     var boton = document.getElementById('boton');
