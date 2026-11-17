@@ -52,7 +52,7 @@
     .pagina {
       position: fixed; inset: 0; overflow: hidden; background: var(--bg); text-align: center;
       display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-      --tri: min(11vw, 7.5vh);          /* ancho de los triángulos; los nombres arrancan a su derecha, a su altura */
+      --tri: min(8vw, 5.4vh);           /* ancho de los triángulos (más chicos desde el 16/11/2026); los nombres arrancan a su derecha */
       padding: max(env(safe-area-inset-top, 0px), calc(var(--tri) * 1.65)) 6vw max(env(safe-area-inset-bottom, 0px), 3.5vh);
     }
     .pagina > * { position: relative; z-index: 1; }
@@ -121,7 +121,7 @@
       .texto h1 { font-size: clamp(15px, 5.6vh, 3vw); }
       .hint { font-size: clamp(9px, 3.4vh, 1.42vw); }
       .ar-btn { font-size: clamp(17px, 6.6vh, 3.4vw); }
-      .pagina .triangulos { width: 7vh; }
+      .pagina .triangulos { width: 5vh; }
       .pagina .flecha { max-width: none; width: 26vh; }
     }
 
@@ -143,7 +143,7 @@
     /* Portada (página principal): logo de Innercia arriba, triángulos en dos esquinas y la flecha abajo a la izquierda */
     .screen > * { position: relative; z-index: 1; }
     .screen .tri-sup, .screen .tri-inf, .screen .flecha-ini { position: absolute; z-index: 0; pointer-events: none; height: auto; }
-    .screen .tri-sup { left: 0; top: 0; width: min(11vw, 7.5vh); }
+    .screen .tri-sup { left: 0; top: 0; width: min(8vw, 5.4vh); }
     .screen .tri-inf { right: 0; bottom: 0; width: min(11vw, 7.5vh); }
     .screen .flecha-ini { left: 0; bottom: 0; width: min(27vw, 40vh); }
     .screen .logo-ini { width: min(76vw, 720px, 70vh); height: auto; margin-bottom: clamp(26px, 5vh, 52px); }

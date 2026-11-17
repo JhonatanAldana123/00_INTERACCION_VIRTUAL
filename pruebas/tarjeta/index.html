@@ -46,7 +46,7 @@
       position: fixed; inset: 0; z-index: 50; overflow: hidden; background: #005C7E; text-align: center;
       font-family: 'Ubuntu', -apple-system, 'Segoe UI', system-ui, sans-serif; font-weight: 300;
       display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-      --tri: min(11vw, 7.5vh);          /* ancho de los triángulos; los nombres arrancan a su derecha, a su altura */
+      --tri: min(8vw, 5.4vh);           /* ancho de los triángulos (más chicos desde el 16/11/2026); los nombres arrancan a su derecha */
       padding: max(env(safe-area-inset-top, 0px), calc(var(--tri) * 1.65)) 6vw max(env(safe-area-inset-bottom, 0px), 2.5vh);
     }
     .inicio > * { position: relative; z-index: 1; }
@@ -159,7 +159,7 @@
       .inicio p { font-size: clamp(9px, 3.4vh, 1.42vw); }
       .inicio .principal { font-size: clamp(17px, 6.6vh, 3.4vw); }
       .inicio .enlace { font-size: clamp(12px, 4.2vh, 2.2vw); }
-      .inicio .triangulos { width: 7vh; }
+      .inicio .triangulos { width: 5vh; }
       .inicio .flecha { max-width: none; width: 26vh; }
     }
     .pista {
@@ -265,7 +265,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116r';
+    const VERSION = '20261116t';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
