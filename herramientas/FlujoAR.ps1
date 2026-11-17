@@ -9,7 +9,7 @@ $Proyecto = Split-Path -Parent $PSScriptRoot
 
 try {
   $fuentes = Get-ChildItem (Join-Path $PSScriptRoot 'FlujoAR') -Filter *.cs | ForEach-Object { $_.FullName }
-  Add-Type -Path $fuentes -ReferencedAssemblies System.Windows.Forms, System.Drawing, System.Web.Extensions
+  Add-Type -Path $fuentes -ReferencedAssemblies System.Windows.Forms, System.Drawing, System.Web.Extensions, Microsoft.VisualBasic
   [FlujoAR.Programa]::Main(@($Proyecto))
 }
 catch {

@@ -528,6 +528,8 @@ namespace FlujoAR
             var btnBajar = Boton("↓ Bajar", false);
             var btnVer = Boton("Ver en el navegador", false);
             var btnActualizar = Boton("Volver a leer carpetas", false);
+            var btnQuitar = Boton("Quitar pieza del QR…", false);
+            btnQuitar.ForeColor = Rojo;
             var lblEstado = Estado();
 
             Func<Coleccion> actual = () => CampanaElegida(cmbCampana);
@@ -582,6 +584,44 @@ namespace FlujoAR
                 Abrir(c != null ? Path.Combine(carpetaModelos, c.Carpeta) : carpetaModelos);
             };
             btnActualizar.Click += (s, e) => IrA(paso);
+            // Saca la pieza elegida de la campaña (y por tanto de su QR). Su carpeta va a la Papelera de reciclaje.
+            btnQuitar.Click += (s, e) =>
+            {
+                var c = actual();
+                int i = seleccion();
+                if (c == null || i < 0 || i >= c.Modelos.Count) { lblEstado.ForeColor = Rojo; lblEstado.Text = "Selecciona en la lista la pieza que quieres quitar."; return; }
+                var m = c.Modelos[i];
+
+                // Una tarjeta AR que abre esta pieza quedaría sin nada que mostrar: primero hay que cambiarla
+                string errorTarjetas;
+                var usan = LeerTarjetas(out errorTarjetas)
+                    .Where(t => t.Coleccion == c.Clave && (t.Pieza == m.Id || (t.Pieza == "" && i == 0)))
+                    .Select(t => t.Numero).ToList();
+                if (usan.Count > 0)
+                {
+                    MessageBox.Show(this, "La tarjeta " + string.Join(" y la ", usan) + " abre esta pieza.\n\nPrimero cámbiale la pieza en el paso 7 (Tarjetas AR) y guarda; después vuelve aquí a quitarla.",
+                        "Flujo AR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string aviso = "¿Quitar «" + m.Nombre + "» de la campaña «" + c.Titulo + "»?\n\n"
+                    + "•  Dejará de verse en el QR de la campaña después de publicar (paso 8).\n"
+                    + "•  Su carpeta (el .glb optimizado y el original de Rhino) va a la Papelera de reciclaje: desde ahí la puedes restaurar.\n"
+                    + (c.Modelos.Count == 1 ? "•  Es la única pieza: la campaña quedará vacía y su QR mostrará «campaña no encontrada» hasta que le agregues otra.\n" : "");
+                if (MessageBox.Show(this, aviso, "Quitar pieza del QR", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+
+                string error;
+                if (!QuitarPieza(c, m, out error))
+                {
+                    lblEstado.ForeColor = Rojo;
+                    lblEstado.Text = error;
+                    return;
+                }
+                string nombre = m.Nombre;
+                IrA(paso);          // vuelve a leer las carpetas y redibuja la lista
+                MessageBox.Show(this, "«" + nombre + "» se quitó y está en la Papelera de reciclaje.\n\nPara que el QR deje de mostrarla, publica (paso 8: Commit to main y Push origin).",
+                    "Flujo AR", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
 
             col.Controls.Add(Etiqueta("Campaña"));
             col.Controls.Add(Fila(cmbCampana, btnCarpeta));
@@ -589,11 +629,45 @@ namespace FlujoAR
             col.Controls.Add(Etiqueta("Piezas, en el orden en que se ven"));
             col.Controls.Add(lv);
             col.Controls.Add(Fila(btnSubir, btnBajar, btnVer, btnActualizar));
+            col.Controls.Add(Fila(btnQuitar));
             col.Controls.Add(lblEstado);
             AgregarAvisos(col);
 
             int inicial = IndiceCampanaPreferida();
             if (inicial >= 0) cmbCampana.SelectedIndex = inicial;
+        }
+
+        // Manda a la Papelera de reciclaje la carpeta de la pieza (models\<Campaña>\<Pieza>\) y vuelve a leer las campañas.
+        // Solo acepta una carpeta que esté justo dentro de la carpeta de su campaña, para no borrar nada más por error.
+        bool QuitarPieza(Coleccion c, Modelo m, out string error)
+        {
+            error = null;
+            try
+            {
+                string glb = RutaLocal(m);
+                string carpetaPieza = string.IsNullOrEmpty(glb) ? null : Path.GetDirectoryName(Path.GetFullPath(glb));
+                string carpetaCampana = Path.GetFullPath(Path.Combine(carpetaModelos, c.Carpeta));
+                if (carpetaPieza == null || !Directory.Exists(carpetaPieza)
+                    || !string.Equals(Path.GetDirectoryName(carpetaPieza), carpetaCampana, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "No encontré la carpeta de «" + m.Nombre + "» dentro de models\\" + c.Carpeta + "\\. Usa «Volver a leer carpetas» y prueba de nuevo.";
+                    return false;
+                }
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(carpetaPieza,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                // El orden guardado de la campaña ya no debe nombrar la pieza
+                if (Directory.Exists(carpetaCampana))
+                {
+                    string e2;
+                    GuardarConfig(c, c.Modelos.Where(x => x != m).Select(x => x.Nombre).ToList(), c.Exposicion, out e2);
+                }
+                return Escanear(out error);
+            }
+            catch (Exception ex)
+            {
+                error = "No se pudo quitar la pieza: " + ex.Message;
+                return false;
+            }
         }
 
         // Reescribe models\<Campaña>\_campana.json (enlace fijo, orden de piezas y luz)

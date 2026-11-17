@@ -87,13 +87,25 @@
   "showroom": {
     "titulo": "SHOWROOM",
     "carpeta": "SHOWROOM",
-    "exposicion": 1.17,
+    "exposicion": 0.97,
     "modelos": [
       {
         "id": "001-isla-axe-nativa",
         "nombre": "001_ISLA_AXE_NATIVA",
         "archivo": "models/SHOWROOM/001_ISLA_AXE_NATIVA/001_ISLA_AXE_NATIVA.glb",
         "version": "6ae587be94"
+      },
+      {
+        "id": "01-isla-axe",
+        "nombre": "01_ISLA_AXE",
+        "archivo": "models/SHOWROOM/01_ISLA_AXE/01_ISLA_AXE.glb",
+        "version": "4309110bfb"
+      },
+      {
+        "id": "002-exh-rexona",
+        "nombre": "002_EXH_REXONA",
+        "archivo": "models/SHOWROOM/002_EXH_REXONA/002_EXH_REXONA.glb",
+        "version": "29fa3d44f9"
       }
     ]
   }

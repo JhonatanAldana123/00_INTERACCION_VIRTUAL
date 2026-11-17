@@ -183,7 +183,7 @@
     <!-- La pieza girando. Es el MISMO componente que después abre el AR a tamaño real: al pulsar «Comenzar»
          sale de este recuadro y queda oculto (ver comenzar()). El <span slot="ar-button"> quita su botón de AR. -->
     <div class="cuadro">
-      <model-viewer id="mv" ar ar-modes="scene-viewer quick-look" ar-usdz-max-texture-size="1024" loading="eager" reveal="auto"
+      <model-viewer id="mv" ar ar-modes="webxr scene-viewer quick-look" ar-usdz-max-texture-size="1024" loading="eager" reveal="auto"
         camera-controls disable-zoom disable-pan autoplay auto-rotate auto-rotate-delay="0" rotation-per-second="24deg"
         interaction-prompt="none" shadow-intensity="0.75" shadow-softness="1" environment-image="neutral" tone-mapping="neutral"
         exposure="0.8" touch-action="pan-y" camera-orbit="-28deg 78deg 98%"><span slot="ar-button"></span></model-viewer>
@@ -215,7 +215,8 @@
   <!-- Panel de calibración (solo en esta página de prueba): se mueve mirando la tarjeta y se anotan los números -->
   <div class="panel" id="panel" hidden>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cFijo" style="width:auto"> Presentación fija en la pantalla (no sigue a la tarjeta)</label>
-    <small>Con la casilla marcada, lo de abajo no se usa.</small>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cZoom" style="width:auto"> Zoom al acercar o alejar la tarjeta</label>
+    <small>Con la presentación fija, lo de abajo no se usa.</small>
     <label>Inclinación que copia de la tarjeta <b id="vIncl"></b><input type="range" id="rIncl" min="0" max="100" step="5"></label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cEncuadre" style="width:auto"> Que no crezca más que la pantalla</label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cCentrar" style="width:auto"> Correrla para que quede siempre entera</label>
@@ -250,7 +251,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116n';
+    const VERSION = '20261116p';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -539,7 +540,9 @@
     // Por eso, apenas carga, la pieza se dibuja UNA vez desde GIRO.cuadros ángulos en un lienzo (una vuelta completa)
     // con un motor aparte que luego se suelta, junto con el modelo. Después solo se muestra una imagen plana que va
     // pasando de cuadro en cuadro (fundiendo cada uno con el siguiente): no le cuesta nada al seguimiento.
-    const GIRO = { cuadros: 72, lado: 256, columnas: 9, filas: 8, angulo: 0 };
+    // 144 vistas de 320 px (una cada 2,5°) en un lienzo de 3840 px. Con 72 vistas fundidas entre sí (primera versión)
+    // se veía doble y de baja calidad; ahora cada vista se muestra sola y hay el doble, así que el giro va parejo.
+    const GIRO = { cuadros: 144, lado: 320, columnas: 12, filas: 12, angulo: 0 };
     async function hornearGiro(modelo) {
       const caja = new THREE.Box3().setFromObject(modelo);
       const tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
@@ -551,6 +554,7 @@
       motor.setSize(GIRO.lado, GIRO.lado, false);
       const luz = new THREE.PMREMGenerator(motor);
       escenaGiro.environment = luz.fromScene(new RoomEnvironment(), 0.04).texture;
+      escenaGiro.add(new THREE.HemisphereLight(0xffffff, 0xb0b0b0, 1.1));        // levanta las sombras: las piezas negras se veían apagadas
       // Cámara un poco por encima, a la distancia en que la pieza cabe entera en cualquier punto de la vuelta
       const radio = Math.hypot(tam.x, tam.y, tam.z) / 2, apertura = 26, altura = THREE.MathUtils.degToRad(11);
       const dist = radio / Math.sin(THREE.MathUtils.degToRad(apertura / 2)) * 1.01;
@@ -577,30 +581,21 @@
       escenaGiro.environment.dispose(); luz.dispose(); motor.dispose();
       if (motor.forceContextLoss) motor.forceContextLoss();
 
-      // Dos planos con el mismo lienzo: uno muestra el cuadro actual y el otro, encima, va apareciendo con el siguiente
-      const base = new THREE.CanvasTexture(atlas);
-      base.colorSpace = THREE.SRGBColorSpace;
-      GIRO.capas = [0, 1].map(n => {
-        const tex = n ? base.clone() : base;
-        tex.repeat.set(1 / GIRO.columnas, 1 / GIRO.filas);
-        tex.needsUpdate = true;
-        const malla = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-          new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, transparent: true, depthWrite: false }));
-        malla.position.z = n * 0.002;
-        giro.add(malla);
-        return malla;
-      });
+      // Un plano que muestra una vista a la vez
+      const tex = new THREE.CanvasTexture(atlas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter;          // sin copias reducidas: ahorra memoria en el celular
+      tex.repeat.set(1 / GIRO.columnas, 1 / GIRO.filas);
+      GIRO.malla = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, transparent: true, depthWrite: false }));
+      giro.add(GIRO.malla);
       pieza = giro;
       ponerCuadroGiro();
     }
     function ponerCuadroGiro() {
-      if (!GIRO.capas) return;
-      const vuelta = GIRO.angulo / (Math.PI * 2), f = (vuelta - Math.floor(vuelta)) * GIRO.cuadros, i = Math.floor(f) % GIRO.cuadros;
-      [i, (i + 1) % GIRO.cuadros].forEach((cuadro, n) => {
-        const tex = GIRO.capas[n].material.map;
-        tex.offset.set((cuadro % GIRO.columnas) / GIRO.columnas, 1 - (Math.floor(cuadro / GIRO.columnas) + 1) / GIRO.filas);
-      });
-      GIRO.capas[1].material.opacity = f - Math.floor(f);
+      if (!GIRO.malla) return;
+      const vuelta = GIRO.angulo / (Math.PI * 2), cuadro = Math.round((vuelta - Math.floor(vuelta)) * GIRO.cuadros) % GIRO.cuadros;
+      GIRO.malla.material.map.offset.set((cuadro % GIRO.columnas) / GIRO.columnas, 1 - (Math.floor(cuadro / GIRO.columnas) + 1) / GIRO.filas);
     }
 
     // La pieza va dentro de la presentación, en su caja de la disposición (al lado o encima de la descripción)
@@ -622,6 +617,7 @@
       videoArranco = videoTermino = botonReal = false;
       enc.listo = false;                  // el bloque aparece directo en su sitio
       enc.z = 0; enc.r = null;            // la presentación fija se vuelve a acomodar a la pantalla
+      enc.zoom = enc.zoomPedido = 1; enc.ref = enc.refN = enc.refSuma = 0;      // y el zoom vuelve a medirse desde cero
       video.pause();
       estado = 'video';
       grupoPieza.visible = false;
@@ -722,6 +718,27 @@
       $('volver').hidden = true;
       try { await iniciarCamara(); } catch (e) { location.reload(); }
     }
+
+    // ── Cuando el AR a tamaño real no abre, o cuando se sale de él ──────────────────────────────
+    // Lo mismo que en el visor del QR normal (index.html): desde octubre de 2026 la app de AR de Android (Scene
+    // Viewer) se cierra sola al abrirse; por eso el atributo ar-modes pone primero el AR del navegador (WebXR) y
+    // deja Scene Viewer de respaldo. Aquí se avisa si alguna falla, para que no pase en silencio.
+    let sceneViewerFallo = false;
+    addEventListener('hashchange', () => {
+      if (location.hash !== '#model-viewer-no-ar-fallback') return;
+      sceneViewerFallo = true;
+      avisar('La app de AR de Android no abrió (es una falla conocida de Google). Toca otra vez «Ver a tamaño real».');
+    });
+    mv.addEventListener('ar-status', e => {
+      const estadoAR = e.detail && e.detail.status;
+      if (estadoAR === 'failed') {
+        avisar(sceneViewerFallo
+          ? 'Este celular no pudo abrir la realidad aumentada. Revisa que «Servicios de Google Play para RA» esté instalado y actualizado.'
+          : 'No se pudo abrir la realidad aumentada en este celular.');
+      }
+      // Al salir del AR del navegador vuelve sola la cámara de la tarjeta (con Scene Viewer o iPhone queda el botón «Volver»)
+      if ((estadoAR === 'not-presenting' || estadoAR === 'failed') && estado === 'ar' && !modoDemo && !$('volver').hidden) volver();
+    });
 
     // ── Cámara en alta resolución ───────────────────────────────────────────────────────────────
     // MindAR pide la cámara sin tamaño y el navegador entrega 640 × 480. A la distancia normal de uso (hay que
@@ -955,7 +972,8 @@
       inclinacion: numero('inclinacion', 100),           // % de la inclinación de la tarjeta que copia la presentación (0 = siempre de frente)
       encuadre: params_('encuadre') !== '0',             // tope de tamaño: al acercar la tarjeta, la presentación no pasa de llenar la pantalla
       centrar: params_('centrar') === '1',               // además se corre para quedar siempre entera en pantalla (apagado: se sentía raro)
-      fijo: params_('fijo') !== '0',                     // la presentación NO sigue a la tarjeta: queda quieta en la pantalla (ver fijar())
+      zoom: params_('zoom') !== '0',                     // con la presentación fija: acercar o alejar la tarjeta la agranda o la achica
+      fijo: params_('fijo') !== '0',                    // la presentación NO sigue a la tarjeta: queda quieta en la pantalla (ver fijar())
     };
 
     // ── Encuadre de la presentación ─────────────────────────────────────────────────────────────
@@ -969,18 +987,47 @@
     //   3. Lugar: si la tarjeta se va hacia un borde, el bloque (logo, video o PDF, descripción y pieza) se corre lo
     //      justo para seguir entero en pantalla. La línea de contacto sí se queda pegada a la tarjeta.
     const ENCUADRE_MIN = 0.42;
-    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, z: 0, p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
+    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, z: 0, zoom: 1, zoomPedido: 1, ref: 0, refN: 0, refSuma: 0,
+                  p2: new THREE.Vector3(), s2: new THREE.Vector3(), p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
                   qv: new THREE.Quaternion(), v: new THREE.Vector3(), m: new THREE.Matrix4(), inv: new THREE.Matrix4() };
     // PRESENTACIÓN FIJA (pedido del usuario, 16/11/2026, tras tres pruebas con saltos y temblor al seguir la tarjeta):
     // la tarjeta solo DISPARA la presentación. Al reconocerla, todo aparece con sus efectos de entrada pero quieto
     // en la pantalla, acomodado para llenarla, como si la tarjeta estuviera justo en el recuadro de la guía. No se
     // mueve con la tarjeta ni desaparece si la tarjeta sale de cuadro. `?fijo=0` (o la casilla de «Calibrar»)
     // vuelve a pegarla a la tarjeta.
-    function fijar() {
+    // ZOOM (pedido el 16/11/2026): lo único que sí sigue a la tarjeta es el tamaño. Acercar la tarjeta a la cámara
+    // agranda toda la presentación y alejarla la achica, sin moverla de su sitio (crece desde el centro).
+    // Se compara el ancho con que se ve la tarjeta contra el ancho que tenía al empezar la presentación. Para que
+    // no tiemble: cambios menores al 4 % se ignoran y el tamaño llega suave (~0,3 s). Si la tarjeta sale de cuadro,
+    // el tamaño se queda como estaba.
+    function medirZoom(dt) {
+      if (cal.zoom && anclaGrupo && anclaGrupo.visible && soporte.visible && enc.r) {
+        const r = enc.r;
+        soporte.matrix.decompose(enc.p2, enc.q, enc.s2);
+        enc.v.copy(enc.p2).applyMatrix4(camera.projectionMatrix);
+        const a = r.left + (enc.v.x + 1) / 2 * r.width;
+        enc.v.copy(enc.p2); enc.v.x += enc.s2.x; enc.v.applyMatrix4(camera.projectionMatrix);
+        const ancho = Math.abs(r.left + (enc.v.x + 1) / 2 * r.width - a);
+        if (ancho > 4 && isFinite(ancho)) {
+          if (!enc.ref) { enc.refSuma += ancho; if (++enc.refN >= 10) enc.ref = enc.refSuma / enc.refN; }      // promedio de los primeros cuadros
+          else {
+            const pedido = Math.min(2.4, Math.max(0.5, ancho / enc.ref));
+            if (Math.abs(pedido - enc.zoomPedido) > 0.04 * enc.zoomPedido) enc.zoomPedido = pedido;
+          }
+        }
+      }
+      if (!cal.zoom) enc.zoomPedido = 1;
+      enc.zoom += (enc.zoomPedido - enc.zoom) * (1 - Math.exp(-dt / 300));
+    }
+
+    function fijar(dt) {
       if (!scene || !camera) return;
       if (contenido.parent !== scene) scene.add(contenido);
       if (!enc.r || enc.n++ % 30 === 0) enc.r = renderer.domElement.getBoundingClientRect();
-      const r = enc.r, { s, cx, cy } = lugarTarjeta();
+      medirZoom(dt);
+      const r = enc.r, lugar = lugarTarjeta(), m = disp.marco, s = lugar.s * enc.zoom;
+      // El centro del marco no se mueve: el zoom crece desde ahí
+      const cx = lugar.cx + (m.l + m.r) / 2 * (lugar.s - s), cy = lugar.cy - (m.t + m.b) / 2 * (lugar.s - s);
       // A la profundidad a la que se vio la tarjeta (cualquiera sirve: solo cambia el tamaño, que se compensa)
       if (!enc.z) { soporte.matrix.decompose(enc.p, enc.q, enc.s); enc.z = enc.p.z < -1 ? enc.p.z : -1000; }
       enc.v.set(0, 0, enc.z).applyMatrix4(camera.projectionMatrix);
@@ -996,7 +1043,7 @@
     }
 
     function encuadrar(dt) {
-      if (!modoDemo && cal.fijo) { fijar(); return; }
+      if (!modoDemo && cal.fijo) { fijar(dt); return; }
       if (!modoDemo && anclaGrupo && contenido.parent !== soporte) soporte.add(contenido);
       if (modoDemo || !soporte.visible || !anclaGrupo) {
         // Sin cámara todo va tal cual sobre la tarjeta dibujada (la vista ya encuadra el marco completo)
@@ -1437,6 +1484,8 @@
     $('cEncuadre').onchange = () => { cal.encuadre = $('cEncuadre').checked; };
     $('cFijo').checked = cal.fijo;
     $('cFijo').onchange = () => { cal.fijo = $('cFijo').checked; };
+    $('cZoom').checked = cal.zoom;
+    $('cZoom').onchange = () => { cal.zoom = $('cZoom').checked; };
     $('cCentrar').checked = cal.centrar;
     $('cCentrar').onchange = () => { cal.centrar = $('cCentrar').checked; };
     $('calibrar').onclick = () => { $('panel').hidden = !$('panel').hidden; };

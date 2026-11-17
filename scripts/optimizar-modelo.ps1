@@ -116,6 +116,9 @@ $reparacion = node (Join-Path $PSScriptRoot 'reparar-uv.js') $Respaldo "$Temp\0.
 if ($LASTEXITCODE -ne 0) { throw 'Falló la reparación del mapeo de texturas.' }
 if ($reparacion.reparados -gt 0) { Write-Host "   Mapeo reparado en $($reparacion.reparados) objetos copiados" -ForegroundColor Green }
 if ($reparacion.lineasQuitadas -gt 0) { Write-Host "   Se quitaron $($reparacion.lineasQuitadas) lineas o puntos sueltos (el AR no los acepta)" -ForegroundColor Green }
+if ($reparacion.vidrios -gt 0) { Write-Host "   Vidrio adaptado para que el AR lo muestre transparente (antes salia negro): $($reparacion.vidrios) material(es)" -ForegroundColor Green }
+if ($reparacion.calados -gt 0) { Write-Host "   Calado (malla, rejilla o lamina perforada) convertido en recorte real: $($reparacion.calados) material(es)" -ForegroundColor Green }
+if ($reparacion.caladosParejos -gt 0) { Write-Host "   AVISO: $($reparacion.caladosParejos) material(es) con calado se muestran semitransparentes parejos: no se pudo leer la imagen del patron (debe ser PNG de 8 bits)" -ForegroundColor Yellow }
 Ejecutar @('prune', "$Temp\0.glb", "$Temp\p.glb")
 # Une los objetos que comparten material: la forma no cambia, pero miles de objetos sueltos
 # inflan el archivo (una ficha por objeto) y obligan al celular a dibujarlos uno por uno

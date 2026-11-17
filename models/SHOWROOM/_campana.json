@@ -1,7 +1,9 @@
 {
   "enlace": "showroom",
   "orden": [
-    "001_ISLA_AXE_NATIVA"
+    "001_ISLA_AXE_NATIVA",
+    "01_ISLA_AXE",
+    "002_EXH_REXONA"
   ],
-  "exposicion": 1.17
+  "exposicion": 0.97
 }

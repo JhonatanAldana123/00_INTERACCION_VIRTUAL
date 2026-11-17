@@ -1,0 +1,31 @@
+{
+  "ancho_cm": 52.0,
+  "alto_cm": 154.0,
+  "profundidad_cm": 51.0,
+  "ancho_in": 20.5,
+  "alto_in": 60.6,
+  "profundidad_in": 20.1,
+  "unidad_press": "cm",
+  "medidas_redondeadas": true,
+  "medidas_reales": {
+    "ancho_cm": 51.9,
+    "alto_cm": 154.1,
+    "profundidad_cm": 50.6
+  },
+  "cargue_aprox": 5,
+  "cargue_origen": "capa:04_PRODUCTO",
+  "cargue_niveles": [
+    1,
+    3,
+    1
+  ],
+  "peso_bandeja_kg": 0.0,
+  "peso_bandeja_lb": 0.0,
+  "calibre_pta_mm": 0.0,
+  "medidas_version": 1,
+  "rhino_document": "002_EXH_REXONA.3dm",
+  "objetos_count": 85,
+  "unidades_modelo": "mil\u00edmetro",
+  "timestamp": "2026-11-16T19:04:40",
+  "fuente": "PRESS PRO v2 press_medidas.py"
+}

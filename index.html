@@ -469,8 +469,50 @@
       } catch (e) { /* ídem */ }
     }
 
+    // ── Vidrio ──────────────────────────────────────────────
+    // En el archivo, el vidrio va como transparencia sencilla (color + 12 % de opacidad): es lo único que entiende
+    // el AR, que al vidrio «físico» de Rhino lo pinta negro (ver scripts/reparar-uv.js). Pero así, en el visor 3D se
+    // ve plano: o lechoso o invisible. Aquí, solo para el visor de la página, esos materiales (marcados por el
+    // optimizador con «vidrio») se vuelven vidrio de verdad: dejan pasar la luz y reflejan el entorno, sobre todo
+    // de lado. Al entrar al AR del navegador se devuelven a la transparencia sencilla, y al salir vuelven.
+    const vidrios = new Map();          // material → cómo venía en el archivo
+    function vidrioReal(activar) {
+      try {
+        const escena = interno('scene');
+        if (!escena) return;
+        escena.traverse(o => {
+          for (const mat of [].concat(o.material || [])) {
+            const es = mat.isMeshPhysicalMaterial && ((mat.userData && mat.userData.vidrio) || vidrios.has(mat));
+            if (!es) continue;
+            if (!vidrios.has(mat)) vidrios.set(mat, { color: mat.color.clone(), opacity: mat.opacity, transparent: mat.transparent, depthWrite: mat.depthWrite });
+            const antes = vidrios.get(mat);
+            if (activar) {
+              mat.transmission = 1; mat.ior = 1.5; mat.thickness = 0; mat.roughness = 0; mat.metalness = 0;
+              mat.specularIntensity = 1; mat.envMapIntensity = 1.6;
+              mat.color.setRGB(0.97, 0.99, 1);
+              mat.opacity = 1; mat.transparent = false; mat.depthWrite = true;
+            } else {
+              mat.transmission = 0; mat.envMapIntensity = 1;
+              mat.color.copy(antes.color);
+              mat.opacity = antes.opacity; mat.transparent = antes.transparent; mat.depthWrite = antes.depthWrite;
+            }
+            mat.needsUpdate = true;
+          }
+        });
+        const pintar = interno('needsRender');
+        if (pintar) pintar.call(viewer);
+      } catch (e) { /* si cambia la versión de model-viewer, queda la transparencia sencilla */ }
+    }
+    viewer.addEventListener('ar-status', e => {
+      const estado = e.detail && e.detail.status;
+      if (estado === 'session-started') vidrioReal(false);
+      if (estado === 'not-presenting' || estado === 'failed') vidrioReal(true);
+    });
+
     viewer.addEventListener('load', () => {
       afinarImagenes();
+      vidrios.clear();
+      vidrioReal(new URLSearchParams(location.search).get('vidrio') !== '0');
       mostrarInterfaz();
       picker.classList.remove('cargando');
       precargar(actual + 1);
