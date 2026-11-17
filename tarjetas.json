@@ -1,10 +1,10 @@
 {
   "_nota": "Qué abre cada tarjeta impresa. El QR de la tarjeta 1 siempre dice innerciaar.com/t/1; aquí se decide la pieza (coleccion y pieza, como en colecciones.json), el nombre que ve el cliente, la dirección que queda en la barra del navegador y la presentación (video o PDF). Se edita desde el paso «Tarjetas AR» de Flujo AR (o a mano, y luego doble clic en ActualizarTarjetas.bat). Después se publica. No hay que reimprimir.",
   "1": { "coleccion": "showroom", "pieza": "01-isla-axe", "nombre": "SHOWROOM · ISLA AXE", "direccion": "showroom/isla-axe",
-         "descripcion": "esto solamente es una prueba de como se ve el cuadro de descripcion pero al final, pueden ir estas meddias de la pieza:\u000aalto 120 cm \u000aancho 140 cm \u000aprof: 100cm",
+         "descripcion": "La isla 360 está diseñada en PTA negro de 4,5 mm, con apliques Spectar. El material esta impreso con tintas biodegradables, amigables con el medio ambiente. Aprovecha sus balcones para exhibir los productos y crear una presentación llamativa que atraiga a los consumidores.\u000aMedidas generales:\u000aAncho: 130 cm\u000aAlto: 140 cm\u000aFondo: 100 cm",
          "presentacion": { "tipo": "video", "archivo": "tarjetas/1/video.mp4", "version": "20261116184157", "origen": "CAPAÑA UNILEVER_V1_ES_animado.mp4" } },
   "2": { "coleccion": "showroom", "pieza": "002-exh-rexona", "nombre": "SHOWROOM · EXH REXONA", "direccion": "showroom/exh-rexona",
-         "descripcion": "asdsdsadsa",
+         "descripcion": "El exhibidor de piso está diseñado con una estructura metálica e incorpora un juego interactivo que invita a los consumidores a participar. Cuenta con iluminación tipo neón y laterales de PS con impresión directa. Sus balcones aprovechan al máximo el espacio para exhibir los productos de forma atractiva y organizada.\u000aMedidas generales:\u000aAncho: 52 cm\u000aAlto: 154 cm\u000aFondo: 51 cm",
          "presentacion": { "tipo": "video", "archivo": "tarjetas/2/video.mp4", "version": "20261116195034", "origen": "CAPAÑA UNILEVER_V2_ES_animado.mp4" } },
   "3": { "coleccion": "oliza", "pieza": "shipper", "nombre": "Oliza · Shipper", "direccion": "oliza/Shipper-AR" },
   "4": { "coleccion": "oliza", "pieza": "minishipper-mixto", "nombre": "Oliza · Minishipper Mixto", "direccion": "oliza/Minishipper" }

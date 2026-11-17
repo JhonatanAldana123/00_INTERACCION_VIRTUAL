@@ -168,6 +168,10 @@
       font-size: 13px; font-weight: 600; white-space: nowrap; pointer-events: none;
     }
     model-viewer { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; right: 0; bottom: 0; }
+    /* Mientras está en el AR del navegador sí debe verse: ahí van la guía de gestos y el botón de salir */
+    model-viewer[ar-status="session-started"], model-viewer[ar-status="object-placed"] {
+      opacity: 1; pointer-events: auto; width: 100%; height: 100%; left: 0; top: 0; right: auto; bottom: auto; z-index: 100; background: transparent;
+    }
   </style>
 </head>
 <body>
@@ -208,11 +212,20 @@
     <span class="marca" id="marca"><b>INNERCIA</b> · AR</span>
     <span>
       <button class="secundario" id="sonido" hidden>Activar sonido</button>
-      <button class="secundario" id="calibrar">Calibrar</button>
+      <button class="secundario" id="opacidad">Opacidad</button>
+      <button class="secundario" id="calibrar" hidden>Calibrar</button>
     </span>
   </div>
 
-  <!-- Panel de calibración (solo en esta página de prueba): se mueve mirando la tarjeta y se anotan los números -->
+  <!-- Opacidad de la presentación (no toca la pieza 3D). Se recuerda en este celular. -->
+  <div class="panel" id="panelOp" hidden>
+    <label>Video o PDF <b id="vOpVideo"></b><input type="range" id="rOpVideo" min="10" max="100" step="5"></label>
+    <label>Descripción <b id="vOpDescripcion"></b><input type="range" id="rOpDescripcion" min="10" max="100" step="5"></label>
+    <label>Logo <b id="vOpLogo"></b><input type="range" id="rOpLogo" min="10" max="100" step="5"></label>
+    <button class="secundario" id="opNormal" type="button">Volver a lo normal</button>
+  </div>
+
+  <!-- Panel de calibración (solo para mantenimiento: se abre con ?calibrar=1) -->
   <div class="panel" id="panel" hidden>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cFijo" style="width:auto"> Presentación fija en la pantalla (no sigue a la tarjeta)</label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cZoom" style="width:auto"> Zoom al acercar o alejar la tarjeta</label>
@@ -243,6 +256,7 @@
   <div class="pista" id="pista" hidden></div>
   <div class="aviso" id="aviso" hidden></div>
 
+  <script src="../../guia-ar.js"></script>
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -251,7 +265,7 @@
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
     // Cambiar al volver a subir tarjeta.mind o video.mp4, para que ningún celular use una copia vieja
-    const VERSION = '20261116p';
+    const VERSION = '20261116r';
     const BUSQUEDA = location.search;                       // se guarda: la dirección visible cambia más abajo
     const params_ = n => new URLSearchParams(BUSQUEDA).get(n);
     // La tarjeta mide 45 × 80 mm. En la escena su ANCHO vale 1; todo lo demás se mide contra eso.
@@ -326,29 +340,26 @@
     // Acostado: logo → video o PDF → descripción → pieza 3D → línea de contacto
     const DISPOSICION = {
       vertical: {
-        marco:       { l: -2.1, r: 2.1, t: 6.05, b: -2.2 },
+        marco:       { l: -2.1, r: 2.1, t: 6.05, b: -1.05 },
         logo:        { x: -1.2,  y: 5.9,  ancho: 2.4,       entra: 0,   entrada: 'aparecer' },
         video:       { x: -1.97, y: 5.05, w: 3.94, h: 2.3,  entra: 1.2, entrada: 'aparecer' },
         descripcion: { x: -1.97, y: 2.6,  w: 2.42, h: 1.3,  entra: 3,   entrada: 'abajo' },
         pieza:       { x: 0.55,  y: 2.65, w: 1.42, h: 1.4,  entra: 3 },
-        quienes:     { x: -1.1,  y: -ALTO / 2, ancho: 2.2,  entra: 4.5, entrada: 'abajo' },
       },
       horizontal: {
-        marco:       { l: -1.3, r: 7.5, t: 2.15, b: -2.12 },
+        marco:       { l: -1.3, r: 7.5, t: 2.15, b: -1.7 },
         logo:        { x: -0.95, y: 1.98, ancho: 2.2,       entra: 0,   entrada: 'aparecer' },
         video:       { x: 0.75,  y: 1.3,  w: 4.9,  h: 2.85, entra: 1.2, entrada: 'derecha' },
         descripcion: { x: 5.8,   y: -0.3, w: 1.65, h: 1.25, entra: 3,   entrada: 'abajo' },
         pieza:       { x: 5.8,   y: 1.75, w: 1.65, h: 1.85, entra: 4 },
-        quienes:     { x: -1.1,  y: -ALTO / 2, ancho: 2.2,  entra: 5.2, entrada: 'abajo' },
       },
     };
     let disp = DISPOSICION.vertical;
-    // El video va primero (el código lo busca como PANELES[0]). «descripcion» y «quienes» se dibujan aquí mismo
+    // El video va primero (el código lo busca como PANELES[0]). «descripcion» se dibuja aquí mismo
     // en un lienzo (dibujarPaneles), con la tipografía de la tarjeta: no son imágenes fijas.
     const PANELES = [
       { id: 'video',       video: true, opacidad: OPACIDAD },
       { id: 'logo',        imagen: 'panel-logo.png' },
-      { id: 'quienes',     lienzo: document.createElement('canvas') },
       { id: 'descripcion', lienzo: document.createElement('canvas') },
     ];
 
@@ -369,8 +380,8 @@
       def.malla = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
         new THREE.MeshBasicMaterial({ map: def.tex, toneMapped: false, transparent: true, opacity: 0, depthWrite: false }));
       def.malla.visible = false;
-      // La línea de contacto cuelga de la tarjeta; todo lo demás va en el «bloque», que se acomoda a la pantalla
-      (def.id === 'quienes' ? grupoVideo : bloque).add(def.malla);
+      // Todo va en el «bloque», que se acomoda a la pantalla
+      bloque.add(def.malla);
     });
     // Borde blanco fino del video y barra de avance
     const marcoVideo = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
@@ -393,19 +404,6 @@
     const textos = { campana: '', pieza: '', descripcion: '', contacto: ['(+57) (601) 742 19 09', 'contacto@innercia.net'] };
     const DESCRIPCION_BASE = 'Diseño bien pensado.\nToca la pieza para verla a tamaño real en tu espacio.';
     function dibujarPaneles() {
-      // Línea que baja de la tarjeta y, debajo, el contacto
-      {
-        const def = PANELES.find(p => p.id === 'quienes'), c = def.lienzo, W = 1024, H = 540, g = c.getContext('2d');
-        if (c.width !== W || c.height !== H) { c.width = W; c.height = H; def.tex.dispose(); }
-        g.clearRect(0, 0, W, H);
-        g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 14;
-        g.strokeStyle = '#fff'; g.lineWidth = 9; g.lineCap = 'butt';
-        g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H * 0.44); g.stroke();
-        g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.font = '300 74px Ubuntu, "Segoe UI", system-ui, sans-serif';
-        textos.contacto.slice(0, 2).forEach((linea, i) => g.fillText(linea, W / 2, H * (0.635 + i * 0.215), W - 40));
-        def.aspecto = W / H; def.tex.needsUpdate = true;
-      }
       // Descripción y medidas de la pieza, sobre el azul de la tarjeta. El lienzo tiene la forma de su caja.
       {
         const def = PANELES.find(p => p.id === 'descripcion'), d = disp.descripcion, c = def.lienzo, g = c.getContext('2d');
@@ -618,6 +616,7 @@
       enc.listo = false;                  // el bloque aparece directo en su sitio
       enc.z = 0; enc.r = null;            // la presentación fija se vuelve a acomodar a la pantalla
       enc.zoom = enc.zoomPedido = 1; enc.ref = enc.refN = enc.refSuma = 0;      // y el zoom vuelve a medirse desde cero
+      enc.lado = enc.ladoPedido = 0; enc.refX = enc.refXSuma = 0;               // lo mismo el movimiento de lado
       video.pause();
       estado = 'video';
       grupoPieza.visible = false;
@@ -645,6 +644,7 @@
         });
         const v = PANELES[0];
         if (params_('opacidad') === null) v.opacidad = 0.95;       // un documento se lee mal si es transparente
+        prepararOpacidad();                                          // salvo que la persona haya elegido otra con «Opacidad»
         v.tex = diapos.texturas[0]; v.malla.material.map = v.tex; diapos.i = 0;
         return;
       }
@@ -700,8 +700,11 @@
     }
 
     // A tamaño real en el piso: se suelta la cámara y se abre el AR del celular (necesita este toque)
-    function verReal() {
+    // Guía de gestos (guia-ar.js): sale sobre la cámara en el AR del navegador; en iPhone, la primera vez, antes de abrirlo
+    const guiaAR = window.instalarGuiaAR ? window.instalarGuiaAR(mv) : null;
+    function verReal(sinGuia) {
       if (!mv.canActivateAR) { avisar('Abre esta página en un celular para verla en tu espacio.'); return; }
+      if (sinGuia !== true && guiaAR && guiaAR.previa(() => verReal(true))) return;
       video.pause();
       video.classList.remove('flotante');
       clearTimeout(relojPerdida);
@@ -972,7 +975,8 @@
       inclinacion: numero('inclinacion', 100),           // % de la inclinación de la tarjeta que copia la presentación (0 = siempre de frente)
       encuadre: params_('encuadre') !== '0',             // tope de tamaño: al acercar la tarjeta, la presentación no pasa de llenar la pantalla
       centrar: params_('centrar') === '1',               // además se corre para quedar siempre entera en pantalla (apagado: se sentía raro)
-      zoom: params_('zoom') !== '0',                     // con la presentación fija: acercar o alejar la tarjeta la agranda o la achica
+      mover: params_('mover') !== '0',                   // con la presentación fija: llevar la tarjeta a un lado corre la presentación hacia ese lado
+      zoom: params_('zoom') !== '0',                    // con la presentación fija: acercar o alejar la tarjeta la agranda o la achica
       fijo: params_('fijo') !== '0',                    // la presentación NO sigue a la tarjeta: queda quieta en la pantalla (ver fijar())
     };
 
@@ -987,7 +991,7 @@
     //   3. Lugar: si la tarjeta se va hacia un borde, el bloque (logo, video o PDF, descripción y pieza) se corre lo
     //      justo para seguir entero en pantalla. La línea de contacto sí se queda pegada a la tarjeta.
     const ENCUADRE_MIN = 0.42;
-    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, z: 0, zoom: 1, zoomPedido: 1, ref: 0, refN: 0, refSuma: 0,
+    const enc = { k: 1, ux: 0, uy: 0, listo: false, n: 0, r: null, z: 0, zoom: 1, zoomPedido: 1, ref: 0, refN: 0, refSuma: 0, refX: 0, refXSuma: 0, lado: 0, ladoPedido: 0,
                   p2: new THREE.Vector3(), s2: new THREE.Vector3(), p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(),
                   qv: new THREE.Quaternion(), v: new THREE.Vector3(), m: new THREE.Matrix4(), inv: new THREE.Matrix4() };
     // PRESENTACIÓN FIJA (pedido del usuario, 16/11/2026, tras tres pruebas con saltos y temblor al seguir la tarjeta):
@@ -1008,16 +1012,25 @@
         const a = r.left + (enc.v.x + 1) / 2 * r.width;
         enc.v.copy(enc.p2); enc.v.x += enc.s2.x; enc.v.applyMatrix4(camera.projectionMatrix);
         const ancho = Math.abs(r.left + (enc.v.x + 1) / 2 * r.width - a);
-        if (ancho > 4 && isFinite(ancho)) {
-          if (!enc.ref) { enc.refSuma += ancho; if (++enc.refN >= 10) enc.ref = enc.refSuma / enc.refN; }      // promedio de los primeros cuadros
-          else {
+        if (ancho > 4 && isFinite(ancho) && isFinite(a)) {
+          if (!enc.ref) {      // promedio de los primeros cuadros: tamaño y lugar de partida
+            enc.refSuma += ancho; enc.refXSuma += a;
+            if (++enc.refN >= 10) { enc.ref = enc.refSuma / enc.refN; enc.refX = enc.refXSuma / enc.refN; }
+          } else {
             const pedido = Math.min(2.4, Math.max(0.5, ancho / enc.ref));
             if (Math.abs(pedido - enc.zoomPedido) > 0.04 * enc.zoomPedido) enc.zoomPedido = pedido;
+            // DE LADO (pedido el 16/11/2026): llevar la tarjeta a la derecha o a la izquierda corre toda la
+            // presentación hacia ese lado, lo mismo que se movió la tarjeta en la pantalla. Igual que el zoom:
+            // movimientos de menos de 6 píxeles se ignoran y llega suave. Hacia arriba y abajo no se mueve.
+            const lado = Math.min(innerWidth * 0.7, Math.max(-innerWidth * 0.7, a - enc.refX));
+            if (Math.abs(lado - enc.ladoPedido) > 6) enc.ladoPedido = lado;
           }
         }
       }
       if (!cal.zoom) enc.zoomPedido = 1;
+      if (!cal.mover) enc.ladoPedido = 0;
       enc.zoom += (enc.zoomPedido - enc.zoom) * (1 - Math.exp(-dt / 300));
+      enc.lado += (enc.ladoPedido - enc.lado) * (1 - Math.exp(-dt / 260));
     }
 
     function fijar(dt) {
@@ -1027,7 +1040,7 @@
       medirZoom(dt);
       const r = enc.r, lugar = lugarTarjeta(), m = disp.marco, s = lugar.s * enc.zoom;
       // El centro del marco no se mueve: el zoom crece desde ahí
-      const cx = lugar.cx + (m.l + m.r) / 2 * (lugar.s - s), cy = lugar.cy - (m.t + m.b) / 2 * (lugar.s - s);
+      const cx = lugar.cx + (m.l + m.r) / 2 * (lugar.s - s) + enc.lado, cy = lugar.cy - (m.t + m.b) / 2 * (lugar.s - s);
       // A la profundidad a la que se vio la tarjeta (cualquiera sirve: solo cambia el tamaño, que se compensa)
       if (!enc.z) { soporte.matrix.decompose(enc.p, enc.q, enc.s); enc.z = enc.p.z < -1 ? enc.p.z : -1000; }
       enc.v.set(0, 0, enc.z).applyMatrix4(camera.projectionMatrix);
@@ -1488,7 +1501,39 @@
     $('cZoom').onchange = () => { cal.zoom = $('cZoom').checked; };
     $('cCentrar').checked = cal.centrar;
     $('cCentrar').onchange = () => { cal.centrar = $('cCentrar').checked; };
-    $('calibrar').onclick = () => { $('panel').hidden = !$('panel').hidden; };
+    $('calibrar').hidden = params_('calibrar') !== '1';
+    $('calibrar').onclick = () => { $('panel').hidden = !$('panel').hidden; $('panelOp').hidden = true; };
+
+    // Opacidad de la presentación: video o PDF, descripción y logo (la pieza 3D queda siempre sólida).
+    // Lo que se elige se guarda en este celular; «Volver a lo normal» deja los valores de fábrica.
+    const opFabrica = {};
+    PANELES.forEach(def => { opFabrica[def.id] = def.opacidad ?? 1; });
+    let opElegida = {};
+    try { opElegida = JSON.parse(localStorage.getItem('tarjeta-opacidad') || '{}') || {}; } catch (e) { opElegida = {}; }
+    const OP_CONTROLES = { video: ['rOpVideo', 'vOpVideo'], descripcion: ['rOpDescripcion', 'vOpDescripcion'], logo: ['rOpLogo', 'vOpLogo'] };
+    function aplicarOpacidad(id, valor, guardar) {
+      const def = PANELES.find(d => d.id === id), [r, v] = OP_CONTROLES[id];
+      def.opacidad = Math.min(1, Math.max(0.1, valor));
+      $(r).value = Math.round(def.opacidad * 100);
+      $(v).textContent = Math.round(def.opacidad * 100) + ' %';
+      if (guardar) {
+        opElegida[id] = def.opacidad;
+        try { localStorage.setItem('tarjeta-opacidad', JSON.stringify(opElegida)); } catch (e) { /* sin almacenamiento */ }
+      }
+    }
+    // Se llama al cargar la presentación (el PDF cambia la opacidad de fábrica del video)
+    function prepararOpacidad() {
+      opFabrica.video = PANELES[0].opacidad ?? 1;
+      for (const id in OP_CONTROLES) aplicarOpacidad(id, typeof opElegida[id] === 'number' ? opElegida[id] : opFabrica[id], false);
+    }
+    for (const id in OP_CONTROLES) $(OP_CONTROLES[id][0]).oninput = e => aplicarOpacidad(id, e.target.value / 100, true);
+    $('opNormal').onclick = () => {
+      opElegida = {};
+      try { localStorage.removeItem('tarjeta-opacidad'); } catch (e) { /* ídem */ }
+      for (const id in OP_CONTROLES) aplicarOpacidad(id, opFabrica[id], false);
+    };
+    $('opacidad').onclick = () => { $('panelOp').hidden = !$('panelOp').hidden; $('panel').hidden = true; };
+    prepararOpacidad();
 
     $('comenzar').onclick = () => comenzar(params.has('demo'));
     $('sinTarjeta').onclick = () => comenzar(true);

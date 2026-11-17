@@ -377,6 +377,7 @@
   </div>
 
 
+  <script src="guia-ar.js"></script>
   <script>
     // ── Parámetros URL ──────────────────────────────────────
     // Dirección limpia (la genera scripts/generar-colecciones.js):  /campana-alpina/   y   /campana-alpina/bandeja01/
@@ -707,7 +708,14 @@
     });
 
     // ── Activar AR ──────────────────────────────────────────
+    // Guía de gestos (guia-ar.js): dentro del AR del navegador sale sobre la cámara; en iPhone, la primera vez
+    // se muestra antes de abrir el AR de Apple, que no deja poner nada encima.
+    const guiaAR = window.instalarGuiaAR ? window.instalarGuiaAR(viewer) : null;
     function activarAR() {
+      if (guiaAR && guiaAR.previa(abrirAR)) return;
+      abrirAR();
+    }
+    function abrirAR() {
       try {
         viewer.activateAR();
       } catch (e) {

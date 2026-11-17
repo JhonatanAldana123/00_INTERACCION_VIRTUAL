@@ -90,12 +90,6 @@
     "exposicion": 0.97,
     "modelos": [
       {
-        "id": "001-isla-axe-nativa",
-        "nombre": "001_ISLA_AXE_NATIVA",
-        "archivo": "models/SHOWROOM/001_ISLA_AXE_NATIVA/001_ISLA_AXE_NATIVA.glb",
-        "version": "6ae587be94"
-      },
-      {
         "id": "01-isla-axe",
         "nombre": "01_ISLA_AXE",
         "archivo": "models/SHOWROOM/01_ISLA_AXE/01_ISLA_AXE.glb",
