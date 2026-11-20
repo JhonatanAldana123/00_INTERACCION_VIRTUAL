@@ -56,6 +56,7 @@ La mayor parte del peso suele estar en los elementos que se repiten (botellas, t
 - **Evita la transparencia** en las texturas si no la necesitas. Si algún material es transparente, el optimizador deja sus texturas en PNG y el archivo pesa más.
 - **Todo objeto debe tener material.** Los que no tienen salen negros y metálicos en el visor (el optimizador lo avisa).
 - **Revisa las etiquetas en vista Renderizada** antes de exportar. Si Rhino exporta el mapeo solo en uno de varios objetos copiados (pasó con 20 de 21 botellas), el optimizador lo repara solo, siempre que sean copias exactas.
+- **Lo que en Rhino se ve bien no siempre sale bien en el `.glb`.** Productos copiados con la etiqueta corrida, o que se ven huecos por delante, son errores conocidos del exporte: el optimizador los detecta y los arregla solo. La lista completa está en [Errores de Rhino que el optimizador arregla solo](#errores-de-rhino-que-el-optimizador-arregla-solo).
 - Ejecuta `Purge` para borrar materiales, bloques y capas sin usar.
 
 ### 1.4 Escala y posición para AR
@@ -121,7 +122,7 @@ powershell -ExecutionPolicy Bypass -File scripts\optimizar-modelo.ps1 "C:\ruta\E
 | Paso | Acción | Por qué |
 |---|---|---|
 | 1 | Crea `models\Campaña\Pieza\` y copia el original a `_original\` | Orden, y poder volver atrás. `_original` no se sube a GitHub. |
-| 2 | Repara el mapeo de objetos copiados, quita líneas y puntos sueltos, borra datos sin usar y une los objetos que comparten material | Las curvas o bordes que se cuelan al exportar hacen que el AR de Android y de iPhone rechace la pieza completa ("no se puede cargar el objeto"). | Rhino a veces exporta el mapeo (UV) solo en uno de varios objetos iguales (por ejemplo, 1 de 21 botellas) y los demás se ven sin etiqueta: si son copias exactas, se les aplica el mismo mapeo. Unir objetos no cambia la forma, pero una pieza con miles de objetos sueltos pesa mucho más y va lenta en el celular (una isla bajó de 15 MB a 4 MB solo con esto). |
+| 2 | Arregla los errores conocidos de Rhino (ver la tabla de más abajo): mapeo de objetos copiados, caras al revés, líneas y puntos sueltos, vidrios y calados. Borra datos sin usar y une los objetos que comparten material | Las curvas o bordes que se cuelan al exportar hacen que el AR de Android y de iPhone rechace la pieza completa ("no se puede cargar el objeto"). | Rhino a veces exporta el mapeo (UV) solo en uno de varios objetos iguales (por ejemplo, 1 de 21 botellas) y los demás se ven sin etiqueta: si son copias exactas, se les aplica el mismo mapeo. Unir objetos no cambia la forma, pero una pieza con miles de objetos sueltos pesa mucho más y va lenta en el celular (una isla bajó de 15 MB a 4 MB solo con esto). |
 | 2b | Centra la pieza en el origen y apoya su base en el piso | En AR aparece justo donde el cliente toca, sin quedar corrida ni hundida en el suelo. No hace falta ubicarla en el 0,0,0 en Rhino. |
 | 3 | Limita las texturas a 2048 px | En un celular no se nota más resolución |
 | 4 | Convierte las texturas PNG a JPEG | Pesan 5 a 7 veces menos. Se omite si hay transparencia. |
@@ -139,6 +140,28 @@ powershell -ExecutionPolicy Bypass -File scripts\optimizar-modelo.ps1 "C:\ruta\E
 | `AVISO: hay objetos sin material asignado` | Objetos sin material en Rhino: se verán negros | Asígnales un material (Metálico en 0) y exporta de nuevo |
 | `AVISO: N objetos tienen textura pero no tienen mapeo (UV)` | Su imagen no se verá, y no son copias de otro objeto con mapeo, así que no se pudieron reparar solos | En Rhino, aplícales el mapeo de textura y exporta de nuevo |
 | `Se omite la conversion a JPEG` | Hay materiales transparentes | Si no necesitas transparencia, quítala en Rhino (paso 1.3) |
+| `ARREGLADO: ...` | La pieza traía un error conocido de Rhino y el optimizador lo corrigió solo | Nada: revisa la pieza en el visor. Qué error fue, en la tabla de abajo |
+
+### Errores de Rhino que el optimizador arregla solo
+
+Este es el registro de los errores que ya conocemos. Cada vez que optimizas una pieza (paso 3 de Flujo AR, `optimizar.bat` o el animador), el optimizador los busca, los corrige y lo anota al final como `ARREGLADO: ...`. Flujo AR repite esas líneas junto al resultado, con un ✓.
+
+| Lo que se ve en el visor | Qué pasó | Qué hace el optimizador | Visto en |
+|---|---|---|---|
+| Productos copiados con la **etiqueta corrida o partida** (el logo arriba y el resto abajo), cada copia distinta; **tapas en blanco** | El producto se mapeó una vez y luego se copió, movió o cambió de tamaño. En Rhino la imagen viaja con cada copia; en el `.glb` queda clavada donde estaba el original | Vuelve a encajar la imagen completa en cada objeto y en sus copias iguales. Solo actúa si el mapeo es una proyección plana, ocupa casi una imagen entera y se sale más de 5 % | Latas, tapas y pastas del shipper y la bandeja de Zenú (20/11/2026) |
+| Un producto se ve **hueco por delante**, como si la cara frontal fuera transparente y se viera el interior | El objeto viene con las caras mirando hacia adentro. Rhino dibuja las dos caras y no se nota; el visor y el AR solo dibujan la de afuera | Voltea triángulos y normales. Solo en objetos cerrados (sin bordes sueltos): en una lámina abierta no se puede saber cuál es el lado de afuera | Empaques de pasta Doria del shipper de Zenú (20/11/2026) |
+| Al girar la pieza, el **arte parpadea** o se le cuela en rayas el color de la estructura | El arte es una lámina puesta a 0,2–0,4 mm de la cara que cubre: tan pegadas que el visor no distingue cuál va adelante | Adelanta la cara del arte hasta dejarla a 1 mm de la que cubre. La gráfica no se estira ni cambia de tamaño | Artes del shipper y la bandeja de Zenú (20/11/2026) |
+| Varias copias de un producto **sin etiqueta**, de un solo color | Rhino escribió el mapeo solo en una de las copias | Le pone a las demás el mapeo de la que sí lo trae. Solo si son copias exactas | Botellas de Alpina (29/09/2026) |
+| «Ver en AR» dice que **no se puede cargar el objeto** | Se coló una curva o un borde suelto en el exporte | Quita las líneas y puntos sueltos | 29/09/2026 |
+| El **vidrio sale como una placa negra** en AR | El AR no entiende la transmisión del vidrio de Rhino | Lo cambia por transparencia sencilla; en el visor de la página sigue viéndose como vidrio | Exhibidor de Rexona (16/11/2026) |
+| Una **malla o rejilla** se ve como lámina maciza | El calado de Rhino es una imagen de transmisión que el AR no usa | La convierte en un recorte real | Canasta de Rexona (16/11/2026) |
+
+Si aparece un error que no está en la tabla, no se arregla solo todavía. Para registrarlo (quien mantenga el proyecto):
+
+1. La detección y el arreglo van en `scripts\reparar-uv.js`, con un contador en la línea de resultado que imprime al final.
+2. En `scripts\optimizar-modelo.ps1` se agrega su línea a la lista `$arreglos`.
+3. Se agrega su fila a esta tabla.
+4. Antes de regenerar nada, se corre `reparar-uv.js` contra todos los `models\*\*\_original\*.glb`: las campañas que estaban bien deben dar cero cambios.
 
 ---
 

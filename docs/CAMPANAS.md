@@ -45,6 +45,8 @@ Estas **direcciones limpias** son carpetas que Flujo AR crea solo en la raíz de
 - Campañas y piezas pueden tener tildes, ñ y espacios: `Campaña Alpina`, `Bandeja 01`.
 - No pueden empezar con `_` ni con punto (esas carpetas se ignoran) ni tener `\ / : * ? " < > |`.
 - El `.glb` de cada pieza se llama igual que su carpeta: `Bandeja01/Bandeja01.glb`. Flujo AR lo hace así automáticamente.
+- El nombre de la carpeta es el que ve el cliente en el visor (`SHIPPER_ZENÚ` se muestra como «SHIPPER ZENÚ»). La dirección del QR no lleva tildes (`/nutresa/shipper-zenu/`), así que ponerle la tilde a una pieza no cambia su QR.
+- El archivo que exportas de Rhino puede llamarse sin tilde: si optimizas `SHIPPER_ZENU.glb` y la campaña ya tiene la pieza `SHIPPER_ZENÚ`, el paso 3 reconoce que es la misma y la reemplaza, sin crear una pieza repetida. Para cambiarle el nombre a una pieza, renombra su carpeta y su `.glb` (y el de `_original`).
 
 ## Orden de las piezas
 

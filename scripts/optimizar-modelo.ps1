@@ -87,6 +87,27 @@ if (-not $Campana) {
 }
 $Campana = Validar $Campana 'campaña'
 
+# «SHIPPER_ZENU.glb» exportado de Rhino y la pieza «SHIPPER_ZENÚ» de la campaña son la misma pieza: si ya hay una
+# carpeta cuyo nombre da el mismo enlace (sin tildes, mayúsculas ni espacios), se usa esa. Si no, la pieza quedaría
+# duplicada y el QR de la campaña mostraría las dos. Lo mismo con el nombre de la campaña.
+function Enlace($texto) {
+  $letras = "$texto".Normalize([Text.NormalizationForm]::FormD).ToCharArray() |
+    Where-Object { [Globalization.CharUnicodeInfo]::GetUnicodeCategory($_) -ne [Globalization.UnicodeCategory]::NonSpacingMark }
+  ((-join $letras).ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
+}
+function CarpetaExistente($dentroDe, $nombre) {
+  if (-not (Test-Path -LiteralPath $dentroDe)) { return $nombre }
+  $carpetas = @(Get-ChildItem -LiteralPath $dentroDe -Directory | Where-Object { $_.Name -notmatch '^[_.]' } | ForEach-Object Name)
+  if ($carpetas -ccontains $nombre) { return $nombre }
+  $igual = $carpetas | Where-Object { (Enlace $_) -eq (Enlace $nombre) } | Select-Object -First 1
+  if ($igual) { return $igual }
+  return $nombre
+}
+$Campana = CarpetaExistente $Models $Campana
+$existente = CarpetaExistente (Join-Path $Models $Campana) $Nombre
+if ($existente -cne $Nombre) { Write-Host "La pieza ya existe en la campaña como '$existente': se reemplaza esa." }
+$Nombre = $existente
+
 $CarpetaPieza = Join-Path (Join-Path $Models $Campana) $Nombre
 $Originales = Join-Path $CarpetaPieza '_original'
 $Salida = Join-Path $CarpetaPieza "$Nombre.glb"
@@ -114,10 +135,19 @@ New-Item -ItemType Directory -Force $Temp | Out-Null
 Paso '2/5 Reparando mapeo de copias, borrando datos sin usar y uniendo objetos'
 $reparacion = node (Join-Path $PSScriptRoot 'reparar-uv.js') $Respaldo "$Temp\0.glb" | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'Falló la reparación del mapeo de texturas.' }
-if ($reparacion.reparados -gt 0) { Write-Host "   Mapeo reparado en $($reparacion.reparados) objetos copiados" -ForegroundColor Green }
-if ($reparacion.lineasQuitadas -gt 0) { Write-Host "   Se quitaron $($reparacion.lineasQuitadas) lineas o puntos sueltos (el AR no los acepta)" -ForegroundColor Green }
-if ($reparacion.vidrios -gt 0) { Write-Host "   Vidrio adaptado para que el AR lo muestre transparente (antes salia negro): $($reparacion.vidrios) material(es)" -ForegroundColor Green }
-if ($reparacion.calados -gt 0) { Write-Host "   Calado (malla, rejilla o lamina perforada) convertido en recorte real: $($reparacion.calados) material(es)" -ForegroundColor Green }
+# Registro de los errores de Rhino que se detectan y se arreglan solos (la lista completa, con lo que se ve en el
+# visor y su causa, esta en docs\OPTIMIZAR_MODELOS.md, «Errores de Rhino que el optimizador arregla solo»).
+# Cada arreglo se anota aqui y se repite al final como «ARREGLADO: ...»: esas lineas son las que Flujo AR muestra
+# junto al resultado, para que se sepa que la pieza traia el error aunque ya no se vea.
+$arreglos = @()
+if ($reparacion.reparados -gt 0) { $arreglos += "mapeo copiado a $($reparacion.reparados) objetos iguales que venian sin el (se veian de un solo color)" }
+if ($reparacion.reanclados -gt 0) { $arreglos += "imagen vuelta a encajar en $($reparacion.reanclados) objetos copiados, porque su mapeo no habia seguido a las copias (etiquetas corridas, tapas en blanco): $(@($reparacion.nombresReanclados) -join ', ')" }
+if ($reparacion.volteados -gt 0) { $arreglos += "caras puestas al derecho en $($reparacion.volteados) objetos que venian con las caras hacia adentro (se veian huecos por delante): $(@($reparacion.nombresVolteados) -join ', ')" }
+if ($reparacion.separados -gt 0) { $arreglos += "arte separado 1 mm de la cara que cubre en $($reparacion.separados) caras: estaban tan pegadas que parpadeaban al girar la pieza" }
+if ($reparacion.lineasQuitadas -gt 0) { $arreglos += "se quitaron $($reparacion.lineasQuitadas) lineas o puntos sueltos (el AR rechaza la pieza si los encuentra)" }
+if ($reparacion.vidrios -gt 0) { $arreglos += "vidrio adaptado para que el AR lo muestre transparente (salia negro): $($reparacion.vidrios) material(es)" }
+if ($reparacion.calados -gt 0) { $arreglos += "calado (malla, rejilla o lamina perforada) convertido en recorte real: $($reparacion.calados) material(es)" }
+foreach ($a in $arreglos) { Write-Host "   Arreglado: $a" -ForegroundColor Green }
 if ($reparacion.caladosParejos -gt 0) { Write-Host "   AVISO: $($reparacion.caladosParejos) material(es) con calado se muestran semitransparentes parejos: no se pudo leer la imagen del patron (debe ser PNG de 8 bits)" -ForegroundColor Yellow }
 Ejecutar @('prune', "$Temp\0.glb", "$Temp\p.glb")
 # Une los objetos que comparten material: la forma no cambia, pero miles de objetos sueltos
@@ -217,6 +247,7 @@ if ($enlace) {
     Write-Host "QR pieza:    $(if ($limpia) { "$UrlBase$enlace/$idPieza/" } else { "$UrlBase`?coleccion=$enlace&pieza=$idPieza" })"
   }
 }
+foreach ($a in $arreglos) { Write-Host "ARREGLADO: $a" -ForegroundColor Green }
 foreach ($a in @($resumen.avisos)) { if ($a) { Write-Host "AVISO: $a" -ForegroundColor Yellow } }
 
 # Objetos sin material en Rhino: el exportador les pone negro metálico y se ven oscuros

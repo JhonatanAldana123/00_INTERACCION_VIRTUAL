@@ -17,6 +17,25 @@
       }
     ]
   },
+  "nutresa": {
+    "titulo": "NUTRESA",
+    "carpeta": "NUTRESA",
+    "exposicion": 0.7,
+    "modelos": [
+      {
+        "id": "bandeja-zenu",
+        "nombre": "BANDEJA_ZENÚ",
+        "archivo": "models/NUTRESA/BANDEJA_ZENÚ/BANDEJA_ZENÚ.glb",
+        "version": "cb1d62a111"
+      },
+      {
+        "id": "shipper-zenu",
+        "nombre": "SHIPPER_ZENÚ",
+        "archivo": "models/NUTRESA/SHIPPER_ZENÚ/SHIPPER_ZENÚ.glb",
+        "version": "68c60f39d4"
+      }
+    ]
+  },
   "oliza": {
     "titulo": "OLIZA",
     "carpeta": "OLIZA",

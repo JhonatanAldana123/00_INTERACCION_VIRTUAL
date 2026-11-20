@@ -167,6 +167,9 @@ Sí: crear, renombrar o borrar carpetas de campañas y piezas. Los pasos 4 a 8 v
 **Una parte de la pieza se ve negra.**
 Ese objeto no tiene material asignado en Rhino: el exportador le pone uno negro y metálico. El paso 3 lo avisa en naranja al optimizar. En Rhino, asígnale un material (con Metálico en 0), exporta de nuevo y vuelve a optimizar con el mismo nombre de pieza.
 
+**Las etiquetas de los productos salen corridas, las tapas en blanco o un empaque se ve hueco por delante.**
+Son errores conocidos del exporte de Rhino (allá se ve bien, en el `.glb` no). El paso 3 los detecta y los arregla solo: al terminar los lista junto al resultado con un ✓ («Arreglado solo: …»). Si ves alguno en una pieza ya optimizada, vuelve a optimizarla con el mismo nombre. La lista completa está en [OPTIMIZAR_MODELOS.md](OPTIMIZAR_MODELOS.md#errores-de-rhino-que-el-optimizador-arregla-solo).
+
 **El paso 8 dice ⚠ o ✗.**
 - *"todavía no está publicada"*: falta Commit y Push en GitHub Desktop.
 - *"es otra versión"* o *"la lista de campañas es distinta"*: ya hiciste Push pero GitHub Pages aún no se actualizó. Espera 1–2 minutos y verifica de nuevo. También aparece si hiciste cambios después del último Push.

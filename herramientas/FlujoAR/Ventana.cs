@@ -271,7 +271,8 @@ namespace FlujoAR
             {
                 // Lo que se valida es exactamente lo que se envía al optimizar
                 string campana = campanaEntrada = cmbCampana.Text.Trim().TrimEnd('.');
-                string pieza = nombrePieza = txtPieza.Text.Trim().TrimEnd('.');
+                string escrita = txtPieza.Text.Trim().TrimEnd('.');
+                string pieza = nombrePieza = PiezaExistente(campana, escrita);
                 string error = null;
                 if (archivoEntrada == "") error = "Elige el archivo .glb exportado desde Rhino.";
                 else if (!File.Exists(archivoEntrada)) error = "El archivo ya no existe en esa ubicación.";
@@ -289,7 +290,7 @@ namespace FlujoAR
                     int total = ContarPiezas(campana) + (existe ? 0 : 1);
                     lblValidacion.ForeColor = Gris;
                     lblValidacion.Text =
-                        (existe ? "Ya existe esta pieza: se reemplazará por la versión nueva (el QR no cambia)."
+                        (existe ? "Ya existe esta pieza" + (pieza != escrita ? " («" + pieza + "»)" : "") + ": se reemplazará por la versión nueva (el QR no cambia)."
                                 : "Se guardará en models\\" + campana + "\\" + pieza + "\\")
                         + "\n" + (campanaNueva ? "Campaña nueva «" + campana + "»" : "La campaña «" + campana + "»")
                         + " quedará con " + total + (total == 1 ? " pieza → su QR muestra esa pieza (si agregas más, el mismo QR las mostrará)."
@@ -410,8 +411,12 @@ namespace FlujoAR
                 // Los avisos del optimizador (material sin asignar, malla pesada…) se repiten aquí para que no pasen desapercibidos
                 string texto;
                 lock (registro) texto = registro.ToString();
-                var avisos = texto.Split(new[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries)
-                    .Where(l => l.StartsWith("AVISO:")).Select(l => "⚠ " + l.Substring(6).Trim()).Distinct().ToList();
+                var lineas = texto.Split(new[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries);
+                // Lo que venía mal de Rhino y el optimizador arregló solo (mapeo corrido en las copias, caras al revés…):
+                // se muestra para que se sepa que la pieza traía el error, pero no cambia el color: ya está resuelto
+                var arreglos = lineas.Where(l => l.StartsWith("ARREGLADO:")).Select(l => "✓ Arreglado solo: " + l.Substring(10).Trim()).Distinct().ToList();
+                if (arreglos.Count > 0) resultadoOptimizacion += "\n\n" + string.Join("\n", arreglos);
+                var avisos = lineas.Where(l => l.StartsWith("AVISO:")).Select(l => "⚠ " + l.Substring(6).Trim()).Distinct().ToList();
                 if (avisos.Count > 0)
                 {
                     resultadoOptimizacion += "\n\n" + string.Join("\n", avisos);
@@ -1077,6 +1082,25 @@ namespace FlujoAR
         {
             try { return Path.Combine(carpetaModelos, campana, pieza, pieza + ".glb"); }
             catch (ArgumentException) { return ""; }
+        }
+
+        // «SHIPPER_ZENU.glb» exportado de Rhino y la pieza «SHIPPER_ZENÚ» de la campaña son la misma pieza: si ya hay
+        // una carpeta cuyo nombre da el mismo enlace (sin tildes, mayúsculas ni espacios), se usa esa. Si no, la pieza
+        // quedaría duplicada y el QR de la campaña mostraría las dos.
+        string PiezaExistente(string campana, string pieza)
+        {
+            try
+            {
+                string dir = Path.Combine(carpetaModelos, campana);
+                if (pieza == "" || campana == "" || !Directory.Exists(dir)) return pieza;
+                var carpetas = Directory.GetDirectories(dir).Select(Path.GetFileName).Where(c => !c.StartsWith("_") && !c.StartsWith(".")).ToList();
+                if (carpetas.Contains(pieza)) return pieza;
+                string enlace = EnlacePrueba(pieza);
+                return carpetas.FirstOrDefault(c => EnlacePrueba(c) == enlace) ?? pieza;
+            }
+            catch (ArgumentException) { return pieza; }
+            catch (IOException) { return pieza; }
+            catch (UnauthorizedAccessException) { return pieza; }
         }
 
         // Carpetas de campaña existentes (también las que aún no tienen piezas)
